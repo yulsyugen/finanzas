@@ -256,6 +256,7 @@
       <span class="ingreso-prefix">$</span>
       <input type="number" class="ingreso-input" id="ingreso-mes" placeholder="0" oninput="saveIngreso()" inputmode="numeric">
     </div>
+    <div class="ingreso-label" id="ingreso-extra" style="margin-top:8px;margin-bottom:0"></div>
   </div>
 
   <div class="metric-grid" id="metrics"></div>
@@ -452,10 +453,31 @@ function initApp() {
   renderAll();
 }
 
-function monthKey() { return `${state.curYear}-${state.curMonth}`; }
+function monthKey(y, m) {
+  if(y===undefined){ y=state.curYear; m=state.curMonth; }
+  return `${y}-${m}`;
+}
 
+// Ingreso cargado manualmente en el campo "Ingreso del mes"
+function ingresoManual(y, m) {
+  return Number(state.ingresosMes[monthKey(y, m)] || 0);
+}
+
+// Suma de los ingresos registrados como transacciones (ARS) de un mes
+function ingresoTxs(y, m) {
+  return txsForMonth(y, m)
+    .filter(t => t.tipo==='ingreso' && t.moneda==='ARS')
+    .reduce((a,t) => a + Number(t.monto), 0);
+}
+
+// Ingreso total del mes = manual + transacciones de ingreso
+function ingresoTotal(y, m) {
+  return ingresoManual(y, m) + ingresoTxs(y, m);
+}
+
+// Valor manual del mes actual (para poblar el input del dashboard)
 function getIngreso() {
-  return Number(state.ingresosMes[monthKey()] || 0);
+  return ingresoManual();
 }
 
 function saveIngreso() {
@@ -464,6 +486,7 @@ function saveIngreso() {
   saveState();
   renderCatBars();
   renderMetrics();
+  renderTrend();
 }
 
 // NAVIGATION
@@ -498,33 +521,48 @@ function renderDashboard() {
   renderTrend();
 }
 
-function monthTxs() {
+function txsForMonth(y, m) {
   return state.txs.filter(t => {
     const dt = new Date(t.fecha+'T00:00:00');
-    return dt.getMonth()===state.curMonth && dt.getFullYear()===state.curYear;
+    return dt.getMonth()===m && dt.getFullYear()===y;
   });
+}
+
+function monthTxs() {
+  return txsForMonth(state.curYear, state.curMonth);
 }
 
 function renderMetrics() {
   const txs = monthTxs();
-  const ingreso = getIngreso();
+  const ingresoBase = ingresoManual();
+  const ingresoReg = ingresoTxs(state.curYear, state.curMonth);
+  const ingreso = ingresoBase + ingresoReg;
   const gastos = txs.filter(t=>t.tipo==='gasto'&&t.moneda==='ARS').reduce((a,t)=>a+Number(t.monto),0);
   const balance = ingreso - gastos;
-  const ahorro = txs.filter(t=>t.tipo==='gasto'&&t.cat==='ahorro').reduce((a,t)=>a+Number(t.monto),0);
+  const ahorro = txs.filter(t=>t.tipo==='gasto'&&t.cat==='ahorro'&&t.moneda==='ARS').reduce((a,t)=>a+Number(t.monto),0);
+  const ahorroUsdt = txs.filter(t=>t.tipo==='gasto'&&t.cat==='ahorro'&&t.moneda==='USDT').reduce((a,t)=>a+Number(t.monto),0);
   const ahorroProj = ingreso * 0.10;
   const ahorroColor = ahorro >= ahorroProj*0.8 ? 'c-green' : 'c-red';
+  const ahorroSub = ahorroUsdt>0 ? `meta ${fmt(ahorroProj)} · +U$${ahorroUsdt.toFixed(2)}` : `meta ${fmt(ahorroProj)}`;
+
+  const extra = document.getElementById('ingreso-extra');
+  if(extra){
+    extra.textContent = ingresoReg>0
+      ? `+ ${fmt(ingresoReg)} en ingresos registrados · Total ${fmt(ingreso)}`
+      : '';
+  }
 
   document.getElementById('metrics').innerHTML = `
     <div class="metric"><div class="metric-label">Gastos ARS</div><div class="metric-value">${fmt(gastos)}</div><div class="metric-sub">${ingreso>0?Math.round(gastos/ingreso*100)+'% del ingreso':'—'}</div></div>
     <div class="metric"><div class="metric-label">Balance</div><div class="metric-value ${balance>=0?'c-green':'c-red'}">${fmt(balance)}</div><div class="metric-sub">${balance>=0?'positivo':'negativo'}</div></div>
-    <div class="metric"><div class="metric-label">Ahorro real</div><div class="metric-value ${ahorroColor}">${fmt(ahorro)}</div><div class="metric-sub">meta ${fmt(ahorroProj)}</div></div>
+    <div class="metric"><div class="metric-label">Ahorro real</div><div class="metric-value ${ahorroColor}">${fmt(ahorro)}</div><div class="metric-sub">${ahorroSub}</div></div>
     <div class="metric"><div class="metric-label">Transacciones</div><div class="metric-value c-blue">${txs.length}</div><div class="metric-sub">este mes</div></div>
   `;
 }
 
 function renderCatBars() {
   const txs = monthTxs();
-  const ingreso = getIngreso();
+  const ingreso = ingresoTotal(state.curYear, state.curMonth);
   document.getElementById('cat-bars').innerHTML = CATS_GASTO.map(c => {
     const gastado = txs.filter(t=>t.tipo==='gasto'&&t.cat===c.id&&t.moneda==='ARS').reduce((a,t)=>a+Number(t.monto),0);
     const proj = ingreso * c.pct;
@@ -547,8 +585,8 @@ function renderTrend() {
   for(let i=5;i>=0;i--){
     let m=state.curMonth-i, y=state.curYear;
     if(m<0){m+=12;y--;}
-    const mTxs = state.txs.filter(t=>{const dt=new Date(t.fecha+'T00:00:00');return dt.getMonth()===m&&dt.getFullYear()===y;});
-    const ingMes = Number(state.ingresosMes[`${y}-${m}`]||0);
+    const mTxs = txsForMonth(y, m);
+    const ingMes = ingresoTotal(y, m);
     const gas = mTxs.filter(t=>t.tipo==='gasto'&&t.moneda==='ARS').reduce((a,t)=>a+Number(t.monto),0);
     last6.push({label:MONTHS_ES[m].slice(0,3), ing:ingMes, gas});
   }
@@ -724,9 +762,12 @@ function chatKeydown(e) {
 
 function buildContext() {
   const txs = monthTxs();
-  const ingreso = getIngreso();
+  const ingresoBase = ingresoManual();
+  const ingresoReg = ingresoTxs(state.curYear, state.curMonth);
+  const ingreso = ingresoBase + ingresoReg;
   const gastos = txs.filter(t=>t.tipo==='gasto'&&t.moneda==='ARS').reduce((a,t)=>a+Number(t.monto),0);
   const balance = ingreso - gastos;
+  const ahorroUsdt = txs.filter(t=>t.tipo==='gasto'&&t.cat==='ahorro'&&t.moneda==='USDT').reduce((a,t)=>a+Number(t.monto),0);
   const catResumen = CATS_GASTO.map(c=>{
     const g = txs.filter(t=>t.tipo==='gasto'&&t.cat===c.id&&t.moneda==='ARS').reduce((a,t)=>a+Number(t.monto),0);
     const proj = ingreso*c.pct;
@@ -739,9 +780,9 @@ function buildContext() {
     return `  - ${o.nombre}: ${pct}% completado${meses?', ~'+meses+' meses para llegar':''}`;
   }).join('\n') : '  (sin objetivos definidos)';
   return `DATOS FINANCIEROS DEL USUARIO — ${MONTHS_ES[state.curMonth]} ${state.curYear}:
-Ingreso del mes: $${Math.round(ingreso).toLocaleString('es-AR')} ARS
+Ingreso del mes: $${Math.round(ingreso).toLocaleString('es-AR')} ARS (manual $${Math.round(ingresoBase).toLocaleString('es-AR')} + registrado como transacciones $${Math.round(ingresoReg).toLocaleString('es-AR')})
 Total gastado (ARS): $${Math.round(gastos).toLocaleString('es-AR')}
-Balance: $${Math.round(balance).toLocaleString('es-AR')}
+Balance: $${Math.round(balance).toLocaleString('es-AR')}${ahorroUsdt>0?'\nAhorro en USDT este mes: U$'+ahorroUsdt.toFixed(2)+' (no se convierte a ARS)':''}
 
 Detalle por categoría:
 ${catResumen}
