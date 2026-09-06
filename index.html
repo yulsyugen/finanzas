@@ -105,12 +105,6 @@
   .c-red { color: var(--red); }
   .c-blue { color: var(--blue); }
 
-  /* INGRESO MENSUAL */
-  .ingreso-input-wrap { display: flex; align-items: center; gap: 8px; }
-  .ingreso-prefix { font-size: 18px; font-weight: 600; color: var(--text-muted); }
-  .ingreso-input { flex: 1; font-size: 24px; font-weight: 700; border: none; background: transparent; color: var(--green); outline: none; width: 100%; }
-  .ingreso-label { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; }
-
   /* BALANCE HERO */
   .balance-hero { text-align: center; padding: 1.25rem 1.1rem; }
   .balance-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
@@ -263,15 +257,6 @@
   </div>
 
   <div class="metric-grid" id="metrics"></div>
-
-  <div class="card">
-    <div class="ingreso-label">Ingreso manual adicional</div>
-    <div class="ingreso-input-wrap">
-      <span class="ingreso-prefix">$</span>
-      <input type="number" class="ingreso-input" id="ingreso-mes" placeholder="0" oninput="saveIngreso()" inputmode="numeric" style="font-size:18px">
-    </div>
-    <div class="setup-hint" style="margin-top:8px">Sumá acá ingresos que no cargaste como transacción. Los ingresos registrados en Movimientos ya se cuentan automáticamente.</div>
-  </div>
 
   <div class="card">
     <div class="card-title">Categorías — real vs proyectado</div>
@@ -470,7 +455,7 @@ function monthKey(y, m) {
   return `${y}-${m}`;
 }
 
-// Ingreso cargado manualmente en el campo "Ingreso del mes"
+// Compat: ingreso manual de meses cargados en versiones anteriores
 function ingresoManual(y, m) {
   return Number(state.ingresosMes[monthKey(y, m)] || 0);
 }
@@ -482,23 +467,9 @@ function ingresoTxs(y, m) {
     .reduce((a,t) => a + Number(t.monto), 0);
 }
 
-// Ingreso total del mes = manual + transacciones de ingreso
+// Ingreso total del mes = transacciones de ingreso (+ manual heredado)
 function ingresoTotal(y, m) {
   return ingresoManual(y, m) + ingresoTxs(y, m);
-}
-
-// Valor manual del mes actual (para poblar el input del dashboard)
-function getIngreso() {
-  return ingresoManual();
-}
-
-function saveIngreso() {
-  const v = parseFloat(document.getElementById('ingreso-mes').value) || 0;
-  state.ingresosMes[monthKey()] = v;
-  saveState();
-  renderCatBars();
-  renderMetrics();
-  renderTrend();
 }
 
 // NAVIGATION
@@ -526,8 +497,6 @@ function renderAll() { renderDashboard(); renderTxList(); renderObjs(); }
 
 function renderDashboard() {
   document.getElementById('month-label').textContent = MONTHS_ES[state.curMonth].slice(0,3)+' '+state.curYear;
-  const ing = getIngreso();
-  document.getElementById('ingreso-mes').value = ing || '';
   renderMetrics();
   renderCatBars();
   renderTrend();
