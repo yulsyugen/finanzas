@@ -470,7 +470,8 @@
     </div>
     <div class="field-group" id="proj-cat-group" style="display:none">
       <label class="field-label">Categoría</label>
-      <select class="field-select" id="proj-cat"></select>
+      <select class="field-select" id="proj-cat" onchange="toggleProjCatOtro()"></select>
+      <input type="text" class="field-input" id="proj-cat-otro" placeholder="Escribí la categoría (opcional)" style="display:none;margin-top:8px">
     </div>
     <div class="field-row">
       <div class="field-group">
@@ -1197,7 +1198,18 @@ const FRECUENCIAS = {
 };
 const MONEDAS = ['ARS','USDT'];
 const PROJ_ALERT = 0.7; // gastos fijos > 70% del ingreso del mes
+const PROJ_CAT_OTROS = '__otros'; // valor del select; se guarda el texto escrito (o "Otros")
 let projTipo = 'ingreso';
+
+// Etiqueta de la categoría de un gasto proyectado: las fijas con ícono, las libres con 📦
+function projCatLabel(cat) {
+  return CATS_GASTO.some(c=>c.id===cat) ? catLabel(cat) : `📦 ${esc(cat)}`;
+}
+
+function toggleProjCatOtro() {
+  const otro = document.getElementById('proj-cat').value === PROJ_CAT_OTROS;
+  document.getElementById('proj-cat-otro').style.display = otro ? 'block' : 'none';
+}
 const projOpen = new Set();
 
 const fmtP = (n, moneda) => moneda==='USDT' ? 'U$'+Math.round(n).toLocaleString('es-AR') : fmt(n);
@@ -1247,7 +1259,8 @@ function projObjReach(o, proj) {
 
 function renderProyeccion() {
   const catSel = document.getElementById('proj-cat');
-  if(!catSel.options.length) catSel.innerHTML = CATS_GASTO.map(c=>`<option value="${c.id}">${c.icon} ${c.name}</option>`).join('');
+  if(!catSel.options.length) catSel.innerHTML = CATS_GASTO.map(c=>`<option value="${c.id}">${c.icon} ${c.name}</option>`).join('')
+    + `<option value="${PROJ_CAT_OTROS}">📦 Otros</option>`;
   const inicio = document.getElementById('proj-inicio');
   if(!inicio.value) { const h=new Date(); inicio.value = ymKey(h.getFullYear(), h.getMonth()); }
 
@@ -1292,7 +1305,7 @@ function renderProyeccion() {
       return `<div class="proj-usdt">${mon}: +${fmtP(t.ing,mon)} · −${fmtP(t.gas,mon)} · disponible ${fmtP(t.disp,mon)}</div>`;
     }).join('');
     const detalle = mo.items.length ? [...mo.items].sort((x,y)=>x.tipo.localeCompare(y.tipo)).map(p =>
-      `<div class="proj-detail-row"><span>${p.tipo==='ingreso'?'➕':'➖'} ${esc(p.nombre)}${p.tipo==='gasto'&&p.categoria?' · '+catLabel(p.categoria):''}</span><span class="${p.tipo==='ingreso'?'c-green':'c-red'}">${fmtP(p.monto,p.moneda)}</span></div>`
+      `<div class="proj-detail-row"><span>${p.tipo==='ingreso'?'➕':'➖'} ${esc(p.nombre)}${p.tipo==='gasto'&&p.categoria?' · '+projCatLabel(p.categoria):''}</span><span class="${p.tipo==='ingreso'?'c-green':'c-red'}">${fmtP(p.monto,p.moneda)}</span></div>`
     ).join('') : '<div class="proj-detail-row">Sin ingresos ni gastos proyectados</div>';
     return `<div class="card proj-month ${projOpen.has(key)?'open':''}" onclick="toggleProjMonth('${key}', this)">
       <div class="proj-month-head">
@@ -1333,7 +1346,7 @@ function renderProjList() {
   el.innerHTML = '<div class="card">' + items.map(p => {
     const [sy, sm] = String(p.mesInicio).split('-').map(Number);
     const desde = sy&&sm ? ` · ${p.frecuencia==='unico'?'en':'desde'} ${MONTHS_ES[sm-1].slice(0,3)} ${sy}` : '';
-    const cat = p.tipo==='gasto' && p.categoria ? catLabel(p.categoria)+' · ' : '';
+    const cat = p.tipo==='gasto' && p.categoria ? projCatLabel(p.categoria)+' · ' : '';
     return `<div class="tx-item">
       <div class="tx-info">
         <div class="tx-cat">${esc(p.nombre)}</div>
@@ -1351,13 +1364,15 @@ function addProj() {
   const moneda = document.getElementById('proj-moneda').value;
   const frecuencia = document.getElementById('proj-frec').value;
   const mesInicio = document.getElementById('proj-inicio').value;
-  const categoria = projTipo==='gasto' ? document.getElementById('proj-cat').value : '';
+  let categoria = projTipo==='gasto' ? document.getElementById('proj-cat').value : '';
+  if(categoria===PROJ_CAT_OTROS) categoria = document.getElementById('proj-cat-otro').value.trim() || 'Otros';
   if(!nombre){ toast('Poné un nombre'); return; }
   if(!monto||monto<=0){ toast('Ingresá un monto válido'); return; }
   if(!/^\d{4}-\d{2}$/.test(mesInicio)){ toast('Elegí el mes de inicio'); return; }
   state.proyeccion.push({id:genId(), tipo:projTipo, nombre, categoria, monto, moneda, frecuencia, mesInicio});
   document.getElementById('proj-nombre').value = '';
   document.getElementById('proj-monto').value = '';
+  document.getElementById('proj-cat-otro').value = '';
   saveState();
   syncProyeccion();
   renderProyeccion();
