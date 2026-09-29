@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="Mis Finanzas">
 <title>Mis Finanzas</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   :root {
     --bg: #f7f6f3;
@@ -49,12 +50,17 @@
   html, body { height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 15px; }
   body { display: flex; flex-direction: column; max-width: 480px; margin: 0 auto; }
 
-  /* SETUP SCREEN */
-  #setup-screen {
+  /* SETUP / LOGIN / LOADING SCREENS */
+  #setup-screen, #login-screen, #loading-overlay {
     position: fixed; inset: 0; background: var(--bg); z-index: 100;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     padding: 2rem; max-width: 480px; margin: 0 auto;
   }
+  .spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--border-strong); border-top-color: var(--blue); animation: spin .8s linear infinite; margin-bottom: 1rem; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .btn-google { width: 100%; padding: 13px; background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); font-size: 15px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .btn-google:disabled { opacity: .6; }
+  .btn-google svg { width: 18px; height: 18px; flex-shrink: 0; }
   .setup-logo { font-size: 48px; margin-bottom: 1rem; }
   .setup-title { font-size: 22px; font-weight: 600; color: var(--text); margin-bottom: 0.5rem; }
   .setup-sub { font-size: 14px; color: var(--text-sec); text-align: center; margin-bottom: 2rem; line-height: 1.5; }
@@ -200,8 +206,26 @@
 </head>
 <body>
 
+<!-- LOGIN (Google OAuth gate) -->
+<div id="login-screen">
+  <div class="setup-logo">🔐</div>
+  <div class="setup-title">Mis Finanzas</div>
+  <div class="setup-sub">Iniciá sesión con tu cuenta de Google para acceder a tus datos, guardados de forma segura en tu Google Sheet.</div>
+  <button class="btn-google" id="google-login-btn" onclick="loginWithGoogle()">
+    <svg viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l5.7-5.7C33.9 6.5 29.2 4.5 24 4.5 13.2 4.5 4.5 13.2 4.5 24S13.2 43.5 24 43.5 43.5 34.8 43.5 24c0-1.2-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.8 1.1 8 3l5.7-5.7C33.9 6.5 29.2 4.5 24 4.5c-7.5 0-13.9 4.3-17.1 10.6z"/><path fill="#4CAF50" d="M24 43.5c5.2 0 9.9-2 13.4-5.2l-6.2-5.2c-2 1.4-4.5 2.4-7.2 2.4-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.9 39.1 16.4 43.5 24 43.5z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.3-4.1 5.7l6.2 5.2C40.9 36.4 43.5 30.8 43.5 24c0-1.2-.1-2.4-.4-3.5z"/></svg>
+    Iniciar sesión con Google
+  </button>
+  <div class="setup-hint" id="login-status"></div>
+</div>
+
+<!-- LOADING -->
+<div id="loading-overlay" style="display:none">
+  <div class="spinner"></div>
+  <div class="setup-sub" id="loading-text">Cargando tus datos...</div>
+</div>
+
 <!-- SETUP -->
-<div id="setup-screen">
+<div id="setup-screen" style="display:none">
   <div class="setup-logo">💰</div>
   <div class="setup-title">Mis Finanzas</div>
   <div class="setup-sub">Tu app personal de control financiero con asesor IA integrado.</div>
@@ -393,6 +417,18 @@ const CATS_INGRESO = [
 ];
 const MONTHS_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
+// GOOGLE OAUTH + SHEETS
+const GOOGLE_CLIENT_ID = '424767622838-069e27ifl3celr4q92bh9vmtu7k0t91g.apps.googleusercontent.com';
+const SHEET_ID = '1ApXsc7TNusVWOg_cHYDR4V_GrLpQVik1CyLJK8RLbIg';
+const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
+const SHEET_SCHEMA = {
+  transacciones: ['id','tipo','cat','monto','moneda','fecha','desc'],
+  objetivos: ['id','nombre','meta','actual','mensual','moneda'],
+  ingresos: ['mesKey','monto'],
+};
+let accessToken = null;
+let tokenExpiry = 0;
+
 const fmt = n => '$' + Math.round(n).toLocaleString('es-AR');
 const fmtU = (n,m) => m==='USDT' ? 'U$'+Number(n).toFixed(2) : fmt(n);
 
@@ -419,6 +455,198 @@ function loadState() {
   } catch(e){}
 }
 
+// GOOGLE AUTH
+function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+function colLetter(n) { let s=''; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26); } return s; }
+
+function requestToken(promptValue) {
+  return new Promise((resolve, reject) => {
+    if(!(window.google && google.accounts && google.accounts.oauth2)) { reject(new Error('gsi-not-loaded')); return; }
+    try {
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: SHEETS_SCOPE,
+        callback: (resp) => resp && resp.error ? reject(resp) : resolve(resp),
+        error_callback: (err) => reject(err),
+      });
+      client.requestAccessToken(promptValue !== undefined ? {prompt: promptValue} : {});
+    } catch(e) { reject(e); }
+  });
+}
+
+function storeToken(resp) {
+  accessToken = resp.access_token;
+  tokenExpiry = Date.now() + (Number(resp.expires_in)||3600)*1000 - 60000;
+  try {
+    sessionStorage.setItem('finanzas_gtoken', accessToken);
+    sessionStorage.setItem('finanzas_gtoken_exp', String(tokenExpiry));
+  } catch(e){}
+}
+
+function waitForGis(timeoutMs) {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    (function check(){
+      if(window.google && google.accounts && google.accounts.oauth2) return resolve(true);
+      if(Date.now()-start > timeoutMs) return resolve(false);
+      setTimeout(check, 100);
+    })();
+  });
+}
+
+async function loginWithGoogle() {
+  const btn = document.getElementById('google-login-btn');
+  const ok = await waitForGis(3000);
+  if(!ok) { toast('Google todavía está cargando, esperá un momento'); return; }
+  btn.disabled = true;
+  document.getElementById('login-status').textContent = '';
+  try {
+    const resp = await requestToken('');
+    storeToken(resp);
+    try { localStorage.setItem('finanzas_google_signed_in','1'); } catch(e){}
+    await afterLogin();
+  } catch(e) {
+    console.error(e);
+    document.getElementById('login-status').textContent = 'No se pudo iniciar sesión. Intentá de nuevo.';
+  }
+  btn.disabled = false;
+}
+
+async function afterLogin() {
+  document.getElementById('login-screen').style.display = 'none';
+  showLoading('Sincronizando con Google Sheets...');
+  try {
+    await ensureSheetStructure();
+    await loadAllFromSheet();
+  } catch(e) {
+    console.error(e);
+    hideLoading();
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('login-status').textContent = 'Error al leer Google Sheets. Probá iniciar sesión de nuevo.';
+    return;
+  }
+  hideLoading();
+  saveState();
+  const setupDone = (() => { try { return localStorage.getItem('finanzas_setup_done')==='1'; } catch(e){ return false; } })();
+  if(setupDone) enterMainApp();
+  else document.getElementById('setup-screen').style.display = 'flex';
+}
+
+function showLoading(text) {
+  document.getElementById('loading-text').textContent = text || 'Cargando...';
+  document.getElementById('loading-overlay').style.display = 'flex';
+}
+function hideLoading() {
+  document.getElementById('loading-overlay').style.display = 'none';
+}
+
+async function initGoogleAuthBoot() {
+  document.getElementById('login-screen').style.display = 'flex';
+  await waitForGis(5000);
+  let cachedToken, cachedExp;
+  try {
+    cachedToken = sessionStorage.getItem('finanzas_gtoken');
+    cachedExp = Number(sessionStorage.getItem('finanzas_gtoken_exp')||0);
+  } catch(e){}
+  if(cachedToken && Date.now() < cachedExp) {
+    accessToken = cachedToken; tokenExpiry = cachedExp;
+    await afterLogin();
+    return;
+  }
+  let signedInBefore = false;
+  try { signedInBefore = localStorage.getItem('finanzas_google_signed_in')==='1'; } catch(e){}
+  if(signedInBefore) {
+    try {
+      const resp = await requestToken('none');
+      storeToken(resp);
+      await afterLogin();
+      return;
+    } catch(e) { /* silent login failed, show button */ }
+  }
+}
+
+// SHEETS API
+async function sheetsApi(pathAndQuery, options, isRetry) {
+  if(!accessToken || Date.now() > tokenExpiry) {
+    const resp = await requestToken('none');
+    storeToken(resp);
+  }
+  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}${pathAndQuery}`, {
+    ...options,
+    headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json', ...((options&&options.headers)||{}) }
+  });
+  if(res.status===401 && !isRetry) {
+    const resp = await requestToken('none');
+    storeToken(resp);
+    return sheetsApi(pathAndQuery, options, true);
+  }
+  if(!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`Sheets API error ${res.status}: ${errBody}`);
+  }
+  if(res.status===204) return {};
+  return res.json();
+}
+
+async function ensureSheetStructure() {
+  const meta = await sheetsApi('?fields=sheets.properties.title');
+  const existing = new Set((meta.sheets||[]).map(s=>s.properties.title));
+  const toAdd = Object.keys(SHEET_SCHEMA).filter(name => !existing.has(name));
+  if(toAdd.length) {
+    await sheetsApi(':batchUpdate', { method:'POST', body: JSON.stringify({
+      requests: toAdd.map(name => ({ addSheet: { properties: { title: name } } }))
+    })});
+  }
+  for(const [name, headers] of Object.entries(SHEET_SCHEMA)) {
+    const range = `${name}!A1:${colLetter(headers.length)}1`;
+    const cur = await sheetsApi(`/values/${range}`);
+    const row = (cur.values && cur.values[0]) || [];
+    if(row.join('|') !== headers.join('|')) {
+      await sheetsApi(`/values/${range}?valueInputOption=RAW`, { method:'PUT', body: JSON.stringify({ range, values:[headers] }) });
+    }
+  }
+}
+
+async function loadAllFromSheet() {
+  const [txRes, objRes, ingRes] = await Promise.all([
+    sheetsApi('/values/transacciones!A2:G'),
+    sheetsApi('/values/objetivos!A2:F'),
+    sheetsApi('/values/ingresos!A2:B'),
+  ]);
+  state.txs = (txRes.values||[]).filter(r=>r.length).map(r => ({
+    id: r[0]||genId(), tipo: r[1]||'gasto', cat: r[2]||'', monto: parseFloat(r[3])||0,
+    moneda: r[4]||'ARS', fecha: r[5]||'', desc: r[6]||'',
+  }));
+  state.objs = (objRes.values||[]).filter(r=>r.length).map(r => ({
+    id: r[0]||genId(), nombre: r[1]||'', meta: parseFloat(r[2])||0, actual: parseFloat(r[3])||0,
+    mensual: parseFloat(r[4])||0, moneda: r[5]||'ARS',
+  }));
+  state.ingresosMes = {};
+  (ingRes.values||[]).forEach(r => { if(r[0]) state.ingresosMes[r[0]] = parseFloat(r[1])||0; });
+}
+
+async function overwriteSheetData(sheetName, numCols, rows) {
+  const lastCol = colLetter(numCols);
+  await sheetsApi(`/values/${sheetName}!A2:${lastCol}10000:clear`, { method:'POST', body: JSON.stringify({}) });
+  if(rows.length) {
+    const range = `${sheetName}!A2:${lastCol}${1+rows.length}`;
+    await sheetsApi(`/values/${range}?valueInputOption=RAW`, { method:'PUT', body: JSON.stringify({ range, values: rows }) });
+  }
+}
+
+function syncTxs() {
+  const rows = state.txs.map(t => [t.id, t.tipo, t.cat, t.monto, t.moneda, t.fecha, t.desc||'']);
+  overwriteSheetData('transacciones', 7, rows).catch(e=>{ console.error(e); toast('No se pudo sincronizar con Google Sheets'); });
+}
+function syncObjs() {
+  const rows = state.objs.map(o => [o.id, o.nombre, o.meta, o.actual, o.mensual, o.moneda]);
+  overwriteSheetData('objetivos', 6, rows).catch(e=>{ console.error(e); toast('No se pudo sincronizar con Google Sheets'); });
+}
+function syncIngresos() {
+  const rows = Object.entries(state.ingresosMes).map(([k,v]) => [k, v]);
+  overwriteSheetData('ingresos', 2, rows).catch(e=>{ console.error(e); toast('No se pudo sincronizar con Google Sheets'); });
+}
+
 // SETUP
 function finishSetup(withKey) {
   if(withKey) {
@@ -426,6 +654,11 @@ function finishSetup(withKey) {
     if(k) state.apiKey = k;
   }
   saveState();
+  try { localStorage.setItem('finanzas_setup_done','1'); } catch(e){}
+  enterMainApp();
+}
+
+function enterMainApp() {
   document.getElementById('setup-screen').style.display = 'none';
   document.getElementById('bottom-nav').style.display = 'flex';
   document.getElementById('main').style.display = 'block';
@@ -618,25 +851,27 @@ function addTx() {
   const fecha = document.getElementById('tx-fecha').value;
   const desc = document.getElementById('tx-desc').value.trim();
   if(!fecha){toast('Seleccioná una fecha');return;}
-  state.txs.push({tipo:txTipo,cat,monto,moneda,fecha,desc});
+  state.txs.push({id:genId(),tipo:txTipo,cat,monto,moneda,fecha,desc});
   document.getElementById('tx-monto').value='';
   document.getElementById('tx-desc').value='';
   saveState();
+  syncTxs();
   renderTxList();
   renderDashboard();
   toast('Movimiento registrado ✓');
 }
 
-function delTx(i) {
+function delTx(id) {
   if(!confirm('¿Eliminar este movimiento?'))return;
-  state.txs.splice(i,1);
+  state.txs = state.txs.filter(t => t.id !== id);
   saveState();
+  syncTxs();
   renderTxList();
   renderDashboard();
 }
 
 function renderTxList() {
-  const sorted = [...state.txs].map((t,i)=>({...t,_i:i})).sort((a,b)=>b.fecha.localeCompare(a.fecha));
+  const sorted = [...state.txs].sort((a,b)=>b.fecha.localeCompare(a.fecha));
   if(!sorted.length){
     document.getElementById('tx-list').innerHTML='<div class="empty-state"><div class="empty-icon">📋</div>Todavía no hay movimientos. ¡Registrá tu primero!</div>';
     return;
@@ -659,7 +894,7 @@ function renderTxList() {
         <div class="tx-amount" style="color:${amtColor}">${sign}${fmtU(t.monto,t.moneda)}</div>
         <div class="tx-date">${t.fecha.slice(5)}</div>
       </div>
-      <button class="tx-del" onclick="delTx(${t._i})">×</button>
+      <button class="tx-del" onclick="delTx('${t.id}')">×</button>
     </div>`;
   }).join('')+'</div>';
 }
@@ -672,20 +907,22 @@ function addObj() {
   const mensual = parseFloat(document.getElementById('obj-mensual').value)||0;
   const moneda = document.getElementById('obj-moneda').value;
   if(!nombre||!meta||meta<=0){toast('Completá nombre y meta');return;}
-  state.objs.push({nombre,meta,actual,mensual,moneda});
+  state.objs.push({id:genId(),nombre,meta,actual,mensual,moneda});
   document.getElementById('obj-nombre').value='';
   document.getElementById('obj-meta').value='';
   document.getElementById('obj-actual').value='';
   document.getElementById('obj-mensual').value='';
   saveState();
+  syncObjs();
   renderObjs();
   toast('Objetivo agregado ✓');
 }
 
-function delObj(i) {
+function delObj(id) {
   if(!confirm('¿Eliminar este objetivo?'))return;
-  state.objs.splice(i,1);
+  state.objs = state.objs.filter(o => o.id !== id);
   saveState();
+  syncObjs();
   renderObjs();
 }
 
@@ -694,7 +931,7 @@ function renderObjs() {
     document.getElementById('obj-list').innerHTML='<div class="empty-state"><div class="empty-icon">🎯</div>Todavía no tenés objetivos. ¡Creá el primero!</div>';
     return;
   }
-  document.getElementById('obj-list').innerHTML = state.objs.map((o,i)=>{
+  document.getElementById('obj-list').innerHTML = state.objs.map((o)=>{
     const pct = Math.min(o.actual/o.meta*100,100);
     const falta = Math.max(o.meta-o.actual,0);
     const meses = o.mensual>0 ? Math.ceil(falta/o.mensual) : null;
@@ -709,7 +946,7 @@ function renderObjs() {
           <div class="obj-name">${o.nombre}${o.moneda==='USDT'?'<span class="badge-usdt">USDT</span>':''}</div>
           <div style="display:flex;align-items:center;gap:8px">
             <div class="obj-pct">${Math.round(pct)}%</div>
-            <button class="tx-del" onclick="delObj(${i})">×</button>
+            <button class="tx-del" onclick="delObj('${o.id}')">×</button>
           </div>
         </div>
         <div class="obj-bar-track"><div class="obj-bar-fill" style="width:${pct}%"></div></div>
@@ -838,12 +1075,7 @@ function toast(msg) {
 
 // BOOT
 loadState();
-if(state.apiKey || localStorage.getItem('finanzas_v2')) {
-  document.getElementById('setup-screen').style.display='none';
-  document.getElementById('bottom-nav').style.display='flex';
-  document.getElementById('main').style.display='block';
-  initApp();
-}
+initGoogleAuthBoot();
 </script>
 </body>
 </html>
