@@ -81,7 +81,7 @@
     display: flex; z-index: 50;
     padding-bottom: env(safe-area-inset-bottom);
   }
-  .nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 10px 0; cursor: pointer; border: none; background: none; color: var(--text-muted); font-size: 10px; font-weight: 500; }
+  .nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 0; cursor: pointer; border: none; background: none; color: var(--text-muted); font-size: 9px; font-weight: 500; }
   .nav-item.active { color: var(--blue); }
   .nav-item svg { width: 22px; height: 22px; }
 
@@ -213,6 +213,30 @@
   .cat-alert.warn { background: var(--amber-bg); color: var(--amber); }
   .cat-alert.over { background: var(--red-bg); color: var(--red); }
 
+  /* PROYECCIÓN */
+  .proj-hero { text-align: center; padding: 1.25rem 1.1rem; }
+  .proj-hero-sub { font-size: 12px; color: var(--text-sec); margin-top: 4px; }
+  .proj-hero-objs { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); text-align: left; font-size: 13px; line-height: 1.7; }
+  .proj-month { cursor: pointer; }
+  .proj-month-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .proj-month-title { font-size: 14px; font-weight: 700; }
+  .proj-month-chev { color: var(--text-muted); font-size: 12px; transition: transform .15s; }
+  .proj-month.open .proj-month-chev { transform: rotate(90deg); }
+  .proj-month-nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
+  .proj-num-label { font-size: 10px; color: var(--text-muted); }
+  .proj-num-value { font-size: 14px; font-weight: 700; }
+  .proj-usdt { font-size: 11px; color: var(--text-sec); margin-top: 6px; }
+  .proj-bar-track { height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; margin-top: 10px; }
+  .proj-bar-fill { height: 100%; background: var(--red); border-radius: 3px; }
+  .proj-bar-fill.high { background: var(--amber); }
+  .proj-badge { font-size: 10px; font-weight: 700; background: var(--amber-bg); color: var(--amber); padding: 2px 7px; border-radius: 6px; margin-left: auto; }
+  .proj-detail { display: none; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+  .proj-month.open .proj-detail { display: block; }
+  .proj-detail-row { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; color: var(--text-sec); }
+  .dash-proj-link { display: block; width: 100%; text-align: left; background: none; border: none; color: var(--text-sec); font-size: 13px; padding: 2px 2px 0; margin: -4px 0 0.875rem; cursor: pointer; }
+  .dash-proj-link b { color: var(--green); }
+  .obj-proj { font-size: 12px; color: var(--blue); margin-top: 4px; }
+
   /* HISTORIAL */
   .btn-secondary { width: 100%; padding: 12px; background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); font-size: 14px; font-weight: 600; cursor: pointer; margin-bottom: 0.875rem; }
   .btn-secondary:active { background: var(--surface2); }
@@ -280,6 +304,10 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>
     Objetivos
   </button>
+  <button class="nav-item" onclick="goTo('proyeccion',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>
+    Proyección
+  </button>
   <button class="nav-item" onclick="goTo('asesor',this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
     Asesor
@@ -311,6 +339,8 @@
   <div id="alerts-banner"></div>
 
   <div class="metric-grid" id="metrics"></div>
+
+  <button class="dash-proj-link" id="dash-proj-link" style="display:none" onclick="goTo('proyeccion', document.querySelectorAll('.nav-item')[3])"></button>
 
   <div class="card">
     <div class="card-title">Categorías — real vs proyectado</div>
@@ -421,6 +451,63 @@
   <div id="obj-list"></div>
 </div>
 
+<!-- PROYECCIÓN -->
+<div id="page-proyeccion" class="page">
+  <div class="page-title" style="margin-bottom:1.25rem">Proyección</div>
+
+  <div id="proj-summary"></div>
+  <div id="proj-timeline"></div>
+
+  <div class="card">
+    <div class="card-title">Cargar ingresos y gastos proyectados</div>
+    <div class="tipo-tabs">
+      <button class="tipo-tab active ingreso" id="ptab-ingreso" onclick="setProjTipo('ingreso')">Ingresos</button>
+      <button class="tipo-tab gasto" id="ptab-gasto" onclick="setProjTipo('gasto')">Gastos</button>
+    </div>
+    <div class="field-group">
+      <label class="field-label">Nombre</label>
+      <input type="text" class="field-input" id="proj-nombre" placeholder="ej: Sueldo">
+    </div>
+    <div class="field-group" id="proj-cat-group" style="display:none">
+      <label class="field-label">Categoría</label>
+      <select class="field-select" id="proj-cat"></select>
+    </div>
+    <div class="field-row">
+      <div class="field-group">
+        <label class="field-label">Monto</label>
+        <input type="number" class="field-input" id="proj-monto" placeholder="0" inputmode="decimal">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Moneda</label>
+        <select class="field-select" id="proj-moneda">
+          <option value="ARS">ARS $</option>
+          <option value="USDT">USDT</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field-group">
+        <label class="field-label">Frecuencia</label>
+        <select class="field-select" id="proj-frec">
+          <option value="mensual">Mensual</option>
+          <option value="bimestral">Bimestral</option>
+          <option value="trimestral">Trimestral</option>
+          <option value="semestral">Semestral</option>
+          <option value="anual">Anual</option>
+          <option value="unico">Único</option>
+        </select>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Desde</label>
+        <input type="month" class="field-input" id="proj-inicio">
+      </div>
+    </div>
+    <button class="btn-action" onclick="addProj()">Agregar</button>
+  </div>
+
+  <div id="proj-list"></div>
+</div>
+
 <!-- ASESOR -->
 <div id="page-asesor" class="page">
   <div class="page-title" style="margin-bottom:1.25rem">Asesor financiero</div>
@@ -474,6 +561,7 @@ const SHEET_SCHEMA = {
   transacciones: ['id','tipo','cat','monto','moneda','fecha','desc'],
   objetivos: ['id','nombre','meta','actual','mensual','moneda'],
   ingresos: ['mesKey','monto'],
+  proyeccion: ['id','tipo','nombre','categoria','monto','moneda','frecuencia','mesInicio'],
   historial: ['mesKey','ingreso','gastos','ahorroReal','ahorroProj','ahorroUsdt','catMayorGasto','catMejorControl','gastosPorCat','objetivos','cerradoEl'],
 };
 const ALERT_WARN = 0.8; // umbral de alerta de desvío (80% del presupuesto)
@@ -490,6 +578,7 @@ let state = {
   objs: [],
   ingresosMes: {},
   historial: [],
+  proyeccion: [],
   curYear: new Date().getFullYear(),
   curMonth: new Date().getMonth(),
   chatHistory: [],
@@ -665,11 +754,12 @@ async function ensureSheetStructure() {
 }
 
 async function loadAllFromSheet() {
-  const [txRes, objRes, ingRes, histRes] = await Promise.all([
+  const [txRes, objRes, ingRes, histRes, projRes] = await Promise.all([
     sheetsApi('/values/transacciones!A2:G'),
     sheetsApi('/values/objetivos!A2:F'),
     sheetsApi('/values/ingresos!A2:B'),
     sheetsApi('/values/historial!A2:K?valueRenderOption=UNFORMATTED_VALUE'),
+    sheetsApi('/values/proyeccion!A2:H'),
   ]);
   state.txs = (txRes.values||[]).filter(r=>r.length).map(r => ({
     id: r[0]||genId(), tipo: r[1]||'gasto', cat: r[2]||'', monto: parseFloat(r[3])||0,
@@ -678,6 +768,10 @@ async function loadAllFromSheet() {
   state.objs = (objRes.values||[]).filter(r=>r.length).map(r => ({
     id: r[0]||genId(), nombre: r[1]||'', meta: parseFloat(r[2])||0, actual: parseFloat(r[3])||0,
     mensual: parseFloat(r[4])||0, moneda: r[5]||'ARS',
+  }));
+  state.proyeccion = (projRes.values||[]).filter(r=>r.length).map(r => ({
+    id: r[0]||genId(), tipo: r[1]||'gasto', nombre: r[2]||'', categoria: r[3]||'', monto: parseFloat(r[4])||0,
+    moneda: r[5]||'ARS', frecuencia: r[6]||'mensual', mesInicio: r[7]||'',
   }));
   state.ingresosMes = {};
   (ingRes.values||[]).forEach(r => { if(r[0]) state.ingresosMes[r[0]] = parseFloat(r[1])||0; });
@@ -721,6 +815,10 @@ function syncTxs() {
 function syncObjs() {
   const rows = state.objs.map(o => [o.id, o.nombre, o.meta, o.actual, o.mensual, o.moneda]);
   overwriteSheetData('objetivos', 6, rows).then(renderDashboard).catch(e=>{ console.error(e); toast('No se pudo sincronizar con Google Sheets'); });
+}
+function syncProyeccion() {
+  const rows = state.proyeccion.map(p => [p.id, p.tipo, p.nombre, p.categoria||'', p.monto, p.moneda, p.frecuencia, p.mesInicio]);
+  overwriteSheetData('proyeccion', 8, rows).then(renderDashboard).catch(e=>{ console.error(e); toast('No se pudo sincronizar con Google Sheets'); });
 }
 function syncIngresos() {
   const rows = Object.entries(state.ingresosMes).map(([k,v]) => [k, v]);
@@ -803,6 +901,7 @@ function goTo(pg, btn) {
   if(pg==='objetivos') renderObjs();
   if(pg==='asesor') renderAsesor();
   if(pg==='historial') renderHistorial();
+  if(pg==='proyeccion') renderProyeccion();
   document.getElementById('main').scrollTop = 0;
 }
 
@@ -815,12 +914,13 @@ function changeMonth(d) {
 }
 
 // RENDER ALL
-function renderAll() { renderDashboard(); renderTxList(); renderObjs(); }
+function renderAll() { renderDashboard(); renderTxList(); renderObjs(); renderProyeccion(); }
 
 function renderDashboard() {
   document.getElementById('month-label').textContent = MONTHS_ES[state.curMonth].slice(0,3)+' '+state.curYear;
   renderMetrics();
   renderCatBars();
+  renderDashProjLink();
   renderTrend();
 }
 
@@ -1086,6 +1186,208 @@ function delHist(key) {
   syncHistorial().catch(e=>{ console.error(e); toast('No se pudo sincronizar con Google Sheets'); });
 }
 
+// PROYECCIÓN
+const FRECUENCIAS = {
+  unico:      {step:0,  label:'1 vez'},
+  mensual:    {step:1,  label:'cada mes'},
+  bimestral:  {step:2,  label:'cada 2 meses'},
+  trimestral: {step:3,  label:'cada 3 meses'},
+  semestral:  {step:6,  label:'cada 6 meses'},
+  anual:      {step:12, label:'cada año'},
+};
+const MONEDAS = ['ARS','USDT'];
+const PROJ_ALERT = 0.7; // gastos fijos > 70% del ingreso del mes
+let projTipo = 'ingreso';
+const projOpen = new Set();
+
+const fmtP = (n, moneda) => moneda==='USDT' ? 'U$'+Math.round(n).toLocaleString('es-AR') : fmt(n);
+const ymKey = (y, m) => `${y}-${String(m+1).padStart(2,'0')}`;
+
+// ¿El item proyectado cae en el mes (y, m)? m es 0-based, mesInicio "YYYY-MM"
+function projAppliesTo(p, y, m) {
+  const [sy, sm] = String(p.mesInicio).split('-').map(Number);
+  if(!sy || !sm) return false;
+  const diff = (y-sy)*12 + (m-(sm-1));
+  if(diff < 0) return false;
+  const step = (FRECUENCIAS[p.frecuencia]||FRECUENCIAS.mensual).step;
+  return step===0 ? diff===0 : diff % step === 0;
+}
+
+// Próximos 12 meses desde hoy, con totales por moneda (nunca se mezclan ARS y USDT)
+function computeProjection() {
+  const hoy = new Date();
+  const acum = {ARS:0, USDT:0};
+  const total = {ARS:{ing:0,gas:0,ahorro:0}, USDT:{ing:0,gas:0,ahorro:0}};
+  const months = [];
+  for(let i=0;i<12;i++) {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth()+i, 1);
+    const y = d.getFullYear(), m = d.getMonth();
+    const items = state.proyeccion.filter(p => projAppliesTo(p, y, m));
+    const tot = {};
+    MONEDAS.forEach(mon => {
+      const ing = items.filter(p=>p.tipo==='ingreso'&&p.moneda===mon).reduce((a,p)=>a+Number(p.monto),0);
+      const gas = items.filter(p=>p.tipo==='gasto'&&p.moneda===mon).reduce((a,p)=>a+Number(p.monto),0);
+      acum[mon] += ing - gas;
+      tot[mon] = {ing, gas, disp: ing-gas, acum: acum[mon]};
+      total[mon].ing += ing; total[mon].gas += gas; total[mon].ahorro += ing-gas;
+    });
+    months.push({y, m, items, tot});
+  }
+  const usadas = MONEDAS.filter(mon => state.proyeccion.some(p=>p.moneda===mon));
+  return {months, total, usadas};
+}
+
+// Primer mes en que lo ya ahorrado + el ahorro proyectado acumulado alcanza la meta.
+// null = no alcanzable en 12 meses; 'completo' = ya alcanzado.
+function projObjReach(o, proj) {
+  if(o.actual >= o.meta) return 'completo';
+  const hit = proj.months.find(mo => o.actual + mo.tot[o.moneda].acum >= o.meta);
+  return hit ? {y:hit.y, m:hit.m} : null;
+}
+
+function renderProyeccion() {
+  const catSel = document.getElementById('proj-cat');
+  if(!catSel.options.length) catSel.innerHTML = CATS_GASTO.map(c=>`<option value="${c.id}">${c.icon} ${c.name}</option>`).join('');
+  const inicio = document.getElementById('proj-inicio');
+  if(!inicio.value) { const h=new Date(); inicio.value = ymKey(h.getFullYear(), h.getMonth()); }
+
+  renderProjList();
+  const summary = document.getElementById('proj-summary');
+  const timeline = document.getElementById('proj-timeline');
+  if(!state.proyeccion.length) {
+    summary.innerHTML = '<div class="card"><div class="empty-state"><div class="empty-icon">📈</div>Cargá tus ingresos y gastos esperados para ver tu proyección</div></div>';
+    timeline.innerHTML = '';
+    return;
+  }
+  const proj = computeProjection();
+  const principal = proj.usadas.includes('ARS') ? 'ARS' : 'USDT';
+  const otras = proj.usadas.filter(mon => mon!==principal);
+  const T = proj.total;
+
+  const activos = state.objs.filter(o => o.actual < o.meta);
+  const objLines = activos.map(o => {
+    const r = projObjReach(o, proj);
+    return r ? `🎯 ${esc(o.nombre)}: alcanzable en ${monthLabel(r.y, r.m)}` : `⚠️ ${esc(o.nombre)}: no alcanzable con la proyección actual`;
+  });
+
+  summary.innerHTML = `<div class="card proj-hero">
+    <div class="balance-label">Ahorro proyectado a 12 meses</div>
+    <div class="balance-value ${T[principal].ahorro>=0?'c-green':'c-red'}">${fmtP(T[principal].ahorro, principal)}</div>
+    <div class="proj-hero-sub" style="margin-top:10px">Ingresos esperados: ${fmtP(T[principal].ing, principal)}</div>
+    <div class="proj-hero-sub">Gastos fijos: ${fmtP(T[principal].gas, principal)}</div>
+    ${otras.map(mon => `<div class="proj-hero-sub" style="margin-top:8px"><b>${mon}:</b> ahorro ${fmtP(T[mon].ahorro, mon)} · ingresos ${fmtP(T[mon].ing, mon)} · gastos ${fmtP(T[mon].gas, mon)}</div>`).join('')}
+    ${objLines.length ? `<div class="proj-hero-objs">${objLines.join('<br>')}</div>` : ''}
+  </div>`;
+
+  timeline.innerHTML = '<div class="card-title" style="margin:1.25rem 0 0.75rem">Mes a mes</div>' + proj.months.map(mo => {
+    const key = ymKey(mo.y, mo.m);
+    const a = mo.tot[principal];
+    const pct = a.ing>0 ? Math.min(a.gas/a.ing*100, 100) : (a.gas>0 ? 100 : 0);
+    const alerta = proj.usadas.some(mon => {
+      const t = mo.tot[mon];
+      return t.gas>0 && (t.ing<=0 || t.gas > t.ing*PROJ_ALERT);
+    });
+    const otrasLinea = otras.filter(mon => mo.tot[mon].ing || mo.tot[mon].gas).map(mon => {
+      const t = mo.tot[mon];
+      return `<div class="proj-usdt">${mon}: +${fmtP(t.ing,mon)} · −${fmtP(t.gas,mon)} · disponible ${fmtP(t.disp,mon)}</div>`;
+    }).join('');
+    const detalle = mo.items.length ? [...mo.items].sort((x,y)=>x.tipo.localeCompare(y.tipo)).map(p =>
+      `<div class="proj-detail-row"><span>${p.tipo==='ingreso'?'➕':'➖'} ${esc(p.nombre)}${p.tipo==='gasto'&&p.categoria?' · '+catLabel(p.categoria):''}</span><span class="${p.tipo==='ingreso'?'c-green':'c-red'}">${fmtP(p.monto,p.moneda)}</span></div>`
+    ).join('') : '<div class="proj-detail-row">Sin ingresos ni gastos proyectados</div>';
+    return `<div class="card proj-month ${projOpen.has(key)?'open':''}" onclick="toggleProjMonth('${key}', this)">
+      <div class="proj-month-head">
+        <div class="proj-month-title">${monthLabel(mo.y, mo.m)}</div>
+        ${alerta ? `<span class="proj-badge">⚠️ Gastos fijos altos</span>` : ''}
+        <span class="proj-month-chev">›</span>
+      </div>
+      <div class="proj-month-nums">
+        <div><div class="proj-num-label">Ingreso</div><div class="proj-num-value c-green">${fmtP(a.ing,principal)}</div></div>
+        <div><div class="proj-num-label">Gastos fijos</div><div class="proj-num-value c-red">${fmtP(a.gas,principal)}</div></div>
+        <div><div class="proj-num-label">Disponible</div><div class="proj-num-value">${fmtP(a.disp,principal)}</div></div>
+      </div>
+      <div class="proj-bar-track" title="% del ingreso en gastos fijos"><div class="proj-bar-fill ${pct>PROJ_ALERT*100?'high':''}" style="width:${pct}%"></div></div>
+      ${otrasLinea}
+      <div class="proj-detail">${detalle}</div>
+    </div>`;
+  }).join('');
+}
+
+function toggleProjMonth(key, el) {
+  if(projOpen.has(key)) projOpen.delete(key); else projOpen.add(key);
+  el.classList.toggle('open', projOpen.has(key));
+}
+
+function setProjTipo(tipo) {
+  projTipo = tipo;
+  document.getElementById('ptab-ingreso').classList.toggle('active', tipo==='ingreso');
+  document.getElementById('ptab-gasto').classList.toggle('active', tipo==='gasto');
+  document.getElementById('proj-cat-group').style.display = tipo==='gasto' ? 'block' : 'none';
+  document.getElementById('proj-nombre').placeholder = tipo==='gasto' ? 'ej: Alquiler' : 'ej: Sueldo';
+  renderProjList();
+}
+
+function renderProjList() {
+  const items = state.proyeccion.filter(p => p.tipo===projTipo);
+  const el = document.getElementById('proj-list');
+  if(!items.length) { el.innerHTML = ''; return; }
+  el.innerHTML = '<div class="card">' + items.map(p => {
+    const [sy, sm] = String(p.mesInicio).split('-').map(Number);
+    const desde = sy&&sm ? ` · ${p.frecuencia==='unico'?'en':'desde'} ${MONTHS_ES[sm-1].slice(0,3)} ${sy}` : '';
+    const cat = p.tipo==='gasto' && p.categoria ? catLabel(p.categoria)+' · ' : '';
+    return `<div class="tx-item">
+      <div class="tx-info">
+        <div class="tx-cat">${esc(p.nombre)}</div>
+        <div class="tx-desc">${cat}${(FRECUENCIAS[p.frecuencia]||FRECUENCIAS.mensual).label}${desde}</div>
+      </div>
+      <div class="tx-right"><div class="tx-amount" style="color:${p.tipo==='ingreso'?'var(--green)':'var(--text)'}">${fmtP(p.monto,p.moneda)}</div></div>
+      <button class="tx-del" onclick="delProj('${p.id}')">×</button>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+function addProj() {
+  const nombre = document.getElementById('proj-nombre').value.trim();
+  const monto = parseFloat(document.getElementById('proj-monto').value);
+  const moneda = document.getElementById('proj-moneda').value;
+  const frecuencia = document.getElementById('proj-frec').value;
+  const mesInicio = document.getElementById('proj-inicio').value;
+  const categoria = projTipo==='gasto' ? document.getElementById('proj-cat').value : '';
+  if(!nombre){ toast('Poné un nombre'); return; }
+  if(!monto||monto<=0){ toast('Ingresá un monto válido'); return; }
+  if(!/^\d{4}-\d{2}$/.test(mesInicio)){ toast('Elegí el mes de inicio'); return; }
+  state.proyeccion.push({id:genId(), tipo:projTipo, nombre, categoria, monto, moneda, frecuencia, mesInicio});
+  document.getElementById('proj-nombre').value = '';
+  document.getElementById('proj-monto').value = '';
+  saveState();
+  syncProyeccion();
+  renderProyeccion();
+  renderObjs();
+  renderDashboard();
+  toast('Agregado a la proyección ✓');
+}
+
+function delProj(id) {
+  if(!confirm('¿Eliminar este item de la proyección?')) return;
+  state.proyeccion = state.proyeccion.filter(p => p.id !== id);
+  saveState();
+  syncProyeccion();
+  renderProyeccion();
+  renderObjs();
+  renderDashboard();
+}
+
+function renderDashProjLink() {
+  const el = document.getElementById('dash-proj-link');
+  if(!state.proyeccion.length) { el.style.display = 'none'; return; }
+  const proj = computeProjection();
+  const mon = proj.usadas.includes('ARS') ? 'ARS' : 'USDT';
+  const ahorro = proj.total[mon].ahorro;
+  el.innerHTML = ahorro>=0
+    ? `Proyección: ahorrás <b>${fmtP(ahorro, mon)}</b> en 12 meses →`
+    : `Proyección: te faltan <b style="color:var(--red)">${fmtP(-ahorro, mon)}</b> en 12 meses →`;
+  el.style.display = 'block';
+}
+
 // TIPO TABS
 function setTipo(tipo) {
   txTipo = tipo;
@@ -1188,6 +1490,7 @@ function renderObjs() {
     document.getElementById('obj-list').innerHTML='<div class="empty-state"><div class="empty-icon">🎯</div>Todavía no tenés objetivos. ¡Creá el primero!</div>';
     return;
   }
+  const proj = state.proyeccion.length ? computeProjection() : null;
   document.getElementById('obj-list').innerHTML = state.objs.map((o)=>{
     const pct = Math.min(o.actual/o.meta*100,100);
     const falta = Math.max(o.meta-o.actual,0);
@@ -1196,6 +1499,13 @@ function renderObjs() {
     if(meses){
       const d=new Date();d.setMonth(d.getMonth()+meses);
       eta=MONTHS_ES[d.getMonth()]+' '+d.getFullYear();
+    }
+    // Fecha según la proyección (solo si hay items en la moneda del objetivo y difiere de la estimada)
+    let projLine = '';
+    if(proj && proj.usadas.includes(o.moneda) && falta>0) {
+      const r = projObjReach(o, proj);
+      const projEta = r ? monthLabel(r.y, r.m) : null;
+      if(projEta !== eta) projLine = `<div class="obj-proj">📈 Según la proyección: ${projEta || 'no alcanzable en 12 meses'}</div>`;
     }
     return `<div class="card">
       <div class="obj-item">
@@ -1212,6 +1522,7 @@ function renderObjs() {
           Ahorro mensual: ${fmtU(o.mensual,o.moneda)} · 
           <span class="obj-eta">📅 ${eta}</span>
         </div>
+        ${projLine}
       </div>
     </div>`;
   }).join('');
@@ -1277,6 +1588,8 @@ ${objResumen}
 
 ${buildHistoryContext(gastos, ingreso)}
 
+${buildProjectionContext()}
+
 Contexto: La usuaria maneja finanzas personales en Buenos Aires, Argentina. Ahorra eventualmente en USDT. Usa un sistema de porcentajes sobre ingreso total.`;
 }
 
@@ -1336,6 +1649,37 @@ TENDENCIA:
   Evolución de gastos dentro del historial (meses recientes vs más antiguos): ${tendHist}
   Por categoría:
 ${catTend}`;
+}
+
+function buildProjectionContext() {
+  if(!state.proyeccion.length) return 'PROYECCIÓN (próximos 12 meses): la usuaria todavía no cargó ingresos ni gastos proyectados.';
+  const proj = computeProjection();
+  const item = p => {
+    const [sy, sm] = String(p.mesInicio).split('-').map(Number);
+    const cat = p.tipo==='gasto' && p.categoria ? ` [${(CATS_GASTO.find(c=>c.id===p.categoria)||{name:p.categoria}).name}]` : '';
+    return `  - ${p.nombre}${cat}: ${fmtP(p.monto,p.moneda)} ${(FRECUENCIAS[p.frecuencia]||FRECUENCIAS.mensual).label}${sy&&sm?`, ${p.frecuencia==='unico'?'en':'desde'} ${MONTHS_ES[sm-1]} ${sy}`:''}`;
+  };
+  const ingresos = state.proyeccion.filter(p=>p.tipo==='ingreso');
+  const gastos = state.proyeccion.filter(p=>p.tipo==='gasto');
+  const totales = proj.usadas.map(mon => {
+    const t = proj.total[mon];
+    return `  ${mon}: ingresos esperados ${fmtP(t.ing,mon)}, gastos fijos ${fmtP(t.gas,mon)}, ahorro proyectado ${fmtP(t.ahorro,mon)}`;
+  }).join('\n');
+  const altos = proj.months.filter(mo => proj.usadas.some(mon => { const t=mo.tot[mon]; return t.gas>0 && (t.ing<=0 || t.gas>t.ing*PROJ_ALERT); }));
+  const objs = state.objs.filter(o=>o.actual<o.meta).map(o => {
+    const r = projObjReach(o, proj);
+    return `  - ${o.nombre}: ${r ? 'alcanzable en '+monthLabel(r.y, r.m) : 'NO alcanzable en 12 meses con la proyección actual'}`;
+  });
+  return `PROYECCIÓN (próximos 12 meses, ${monthLabel(proj.months[0].y, proj.months[0].m)} a ${monthLabel(proj.months[11].y, proj.months[11].m)}; ARS y USDT se calculan por separado):
+Ingresos proyectados:
+${ingresos.length ? ingresos.map(item).join('\n') : '  (ninguno)'}
+Gastos fijos proyectados:
+${gastos.length ? gastos.map(item).join('\n') : '  (ninguno)'}
+Totales a 12 meses:
+${totales}
+Meses con gastos fijos > ${Math.round(PROJ_ALERT*100)}% del ingreso: ${altos.length ? altos.map(mo=>monthLabel(mo.y,mo.m)).join(', ') : 'ninguno'}
+Objetivos según la proyección:
+${objs.length ? objs.join('\n') : '  (sin objetivos activos)'}`;
 }
 
 async function sendChat() {
