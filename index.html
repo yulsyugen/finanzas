@@ -202,6 +202,32 @@
   .tipo-tab.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.1); }
   .tipo-tab.active.ingreso { color: var(--green); }
   .tipo-tab.active.gasto { color: var(--red); }
+
+  /* ALERTAS DE DESVÍO */
+  .alert-banner { background: var(--amber-bg); border: 1px solid var(--amber); color: var(--amber); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 13px; line-height: 1.5; margin-bottom: 0.875rem; }
+  .alert-banner.over { background: var(--red-bg); border-color: var(--red); color: var(--red); }
+  .alert-banner-title { font-weight: 700; margin-bottom: 2px; }
+  .cat-block { margin-bottom: 12px; }
+  .cat-block .cat-row { margin-bottom: 0; }
+  .cat-alert { display: inline-block; font-size: 11px; font-weight: 600; margin: 5px 0 0 16px; padding: 3px 8px; border-radius: 6px; }
+  .cat-alert.warn { background: var(--amber-bg); color: var(--amber); }
+  .cat-alert.over { background: var(--red-bg); color: var(--red); }
+
+  /* HISTORIAL */
+  .btn-secondary { width: 100%; padding: 12px; background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); font-size: 14px; font-weight: 600; cursor: pointer; margin-bottom: 0.875rem; }
+  .btn-secondary:active { background: var(--surface2); }
+  .btn-secondary:disabled { opacity: .6; }
+  .btn-back { background: var(--surface2); border: none; border-radius: 50%; width: 30px; height: 30px; cursor: pointer; color: var(--text-sec); font-size: 18px; display: flex; align-items: center; justify-content: center; }
+  .hist-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .hist-title { font-size: 16px; font-weight: 700; }
+  .hist-date { font-size: 11px; color: var(--text-muted); }
+  .hist-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+  .hist-row:last-child { border-bottom: none; }
+  .hist-k { color: var(--text-sec); flex-shrink: 0; }
+  .hist-v { font-weight: 600; text-align: right; }
+  .hist-bar-track { height: 6px; background: var(--green-bg); border-radius: 3px; overflow: hidden; margin: 4px 0 8px; }
+  .hist-bar-fill { height: 100%; background: var(--red); border-radius: 3px; }
+  .hist-del { background: none; border: none; color: var(--text-muted); font-size: 12px; cursor: pointer; text-decoration: underline; margin-top: 8px; padding: 0; }
 </style>
 </head>
 <body>
@@ -280,6 +306,10 @@
     <div class="balance-sub" id="balance-sub"></div>
   </div>
 
+  <button class="btn-secondary" onclick="goTo('historial')">📅 Ver historial</button>
+
+  <div id="alerts-banner"></div>
+
   <div class="metric-grid" id="metrics"></div>
 
   <div class="card">
@@ -293,6 +323,24 @@
       <canvas id="trend-chart" role="img" aria-label="Tendencia de ingresos y gastos últimos 6 meses"></canvas>
     </div>
   </div>
+</div>
+
+<!-- HISTORIAL -->
+<div id="page-historial" class="page">
+  <div class="page-header">
+    <div style="display:flex;align-items:center;gap:10px">
+      <button class="btn-back" onclick="goTo('dashboard', document.querySelector('.nav-item'))" aria-label="Volver">‹</button>
+      <div class="page-title">Historial</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Cierre de mes</div>
+    <button class="btn-action" id="close-month-btn" onclick="closeCurrentMonth()">Cerrar mes actual</button>
+    <div class="setup-hint" id="close-month-hint"></div>
+  </div>
+
+  <div id="hist-list"></div>
 </div>
 
 <!-- MOVIMIENTOS -->
@@ -387,6 +435,7 @@
       <div class="quick-q" onclick="askQuick(this)">¿Cuándo llego a mis objetivos?</div>
       <div class="quick-q" onclick="askQuick(this)">Consejos para ahorrar más</div>
       <div class="quick-q" onclick="askQuick(this)">¿Cómo está mi distribución vs el plan?</div>
+      <div class="quick-q" onclick="askQuick(this)">¿Cómo vengo vs meses anteriores?</div>
     </div>
     <div class="chat-messages" id="chat-messages"></div>
     <div class="chat-input-row">
@@ -425,18 +474,22 @@ const SHEET_SCHEMA = {
   transacciones: ['id','tipo','cat','monto','moneda','fecha','desc'],
   objetivos: ['id','nombre','meta','actual','mensual','moneda'],
   ingresos: ['mesKey','monto'],
+  historial: ['mesKey','ingreso','gastos','ahorroReal','ahorroProj','ahorroUsdt','catMayorGasto','catMejorControl','gastosPorCat','objetivos','cerradoEl'],
 };
+const ALERT_WARN = 0.8; // umbral de alerta de desvío (80% del presupuesto)
 let accessToken = null;
 let tokenExpiry = 0;
 
 const fmt = n => '$' + Math.round(n).toLocaleString('es-AR');
 const fmtU = (n,m) => m==='USDT' ? 'U$'+Number(n).toFixed(2) : fmt(n);
+const esc = s => String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 
 let state = {
   apiKey: '',
   txs: [],
   objs: [],
   ingresosMes: {},
+  historial: [],
   curYear: new Date().getFullYear(),
   curMonth: new Date().getMonth(),
   chatHistory: [],
@@ -525,6 +578,10 @@ async function afterLogin() {
     document.getElementById('login-status').textContent = 'Error al leer Google Sheets. Probá iniciar sesión de nuevo.';
     return;
   }
+  // loadAllFromSheet() ya terminó y state.txs/objs/ingresosMes están completos:
+  // renderizamos ahora, antes de decidir qué pantalla mostrar, para que el
+  // dashboard nunca quede con los valores por defecto ($0) de un device nuevo.
+  renderAll();
   hideLoading();
   saveState();
   const setupDone = (() => { try { return localStorage.getItem('finanzas_setup_done')==='1'; } catch(e){ return false; } })();
@@ -608,10 +665,11 @@ async function ensureSheetStructure() {
 }
 
 async function loadAllFromSheet() {
-  const [txRes, objRes, ingRes] = await Promise.all([
+  const [txRes, objRes, ingRes, histRes] = await Promise.all([
     sheetsApi('/values/transacciones!A2:G'),
     sheetsApi('/values/objetivos!A2:F'),
     sheetsApi('/values/ingresos!A2:B'),
+    sheetsApi('/values/historial!A2:K?valueRenderOption=UNFORMATTED_VALUE'),
   ]);
   state.txs = (txRes.values||[]).filter(r=>r.length).map(r => ({
     id: r[0]||genId(), tipo: r[1]||'gasto', cat: r[2]||'', monto: parseFloat(r[3])||0,
@@ -623,6 +681,28 @@ async function loadAllFromSheet() {
   }));
   state.ingresosMes = {};
   (ingRes.values||[]).forEach(r => { if(r[0]) state.ingresosMes[r[0]] = parseFloat(r[1])||0; });
+  state.historial = sortHistorial((histRes.values||[]).filter(r=>r.length && r[0]).map(parseHistRow));
+}
+
+function parseJsonCell(v, fallback) {
+  try { return v ? JSON.parse(v) : fallback; } catch(e) { return fallback; }
+}
+
+function parseHistRow(r) {
+  const [y, m] = String(r[0]).split('-').map(Number);
+  return {
+    mesKey: String(r[0]), y, m,
+    ingreso: parseFloat(r[1])||0, gastos: parseFloat(r[2])||0,
+    ahorroReal: parseFloat(r[3])||0, ahorroProj: parseFloat(r[4])||0, ahorroUsdt: parseFloat(r[5])||0,
+    catMayorGasto: r[6]||'', catMejorControl: r[7]||'',
+    gastosPorCat: parseJsonCell(r[8], {}), objetivos: parseJsonCell(r[9], []),
+    cerradoEl: r[10]||'',
+  };
+}
+
+// Más reciente primero
+function sortHistorial(list) {
+  return list.sort((a,b) => (b.y - a.y) || (b.m - a.m));
 }
 
 async function overwriteSheetData(sheetName, numCols, rows) {
@@ -636,15 +716,22 @@ async function overwriteSheetData(sheetName, numCols, rows) {
 
 function syncTxs() {
   const rows = state.txs.map(t => [t.id, t.tipo, t.cat, t.monto, t.moneda, t.fecha, t.desc||'']);
-  overwriteSheetData('transacciones', 7, rows).catch(e=>{ console.error(e); toast('No se pudo sincronizar con Google Sheets'); });
+  overwriteSheetData('transacciones', 7, rows).then(renderDashboard).catch(e=>{ console.error(e); toast('No se pudo sincronizar con Google Sheets'); });
 }
 function syncObjs() {
   const rows = state.objs.map(o => [o.id, o.nombre, o.meta, o.actual, o.mensual, o.moneda]);
-  overwriteSheetData('objetivos', 6, rows).catch(e=>{ console.error(e); toast('No se pudo sincronizar con Google Sheets'); });
+  overwriteSheetData('objetivos', 6, rows).then(renderDashboard).catch(e=>{ console.error(e); toast('No se pudo sincronizar con Google Sheets'); });
 }
 function syncIngresos() {
   const rows = Object.entries(state.ingresosMes).map(([k,v]) => [k, v]);
-  overwriteSheetData('ingresos', 2, rows).catch(e=>{ console.error(e); toast('No se pudo sincronizar con Google Sheets'); });
+  overwriteSheetData('ingresos', 2, rows).then(renderDashboard).catch(e=>{ console.error(e); toast('No se pudo sincronizar con Google Sheets'); });
+}
+function syncHistorial() {
+  const rows = state.historial.map(h => [
+    h.mesKey, h.ingreso, h.gastos, h.ahorroReal, h.ahorroProj, h.ahorroUsdt,
+    h.catMayorGasto, h.catMejorControl, JSON.stringify(h.gastosPorCat||{}), JSON.stringify(h.objetivos||[]), h.cerradoEl,
+  ]);
+  return overwriteSheetData('historial', 11, rows);
 }
 
 // SETUP
@@ -715,6 +802,8 @@ function goTo(pg, btn) {
   if(pg==='movimientos') renderTxList();
   if(pg==='objetivos') renderObjs();
   if(pg==='asesor') renderAsesor();
+  if(pg==='historial') renderHistorial();
+  document.getElementById('main').scrollTop = 0;
 }
 
 function changeMonth(d) {
@@ -778,24 +867,96 @@ function renderMetrics() {
   `;
 }
 
-function renderCatBars() {
-  const txs = monthTxs();
-  const ingreso = ingresoTotal(state.curYear, state.curMonth);
-  document.getElementById('cat-bars').innerHTML = CATS_GASTO.map(c => {
+// Estado de cada categoría vs su presupuesto (ingreso del mes × % de la categoría).
+// level: 'ok' | 'warn' (≥80%) | 'over' (≥100%). Ahorro no genera alerta: pasarse es bueno.
+function catBudgetStatus(y, m) {
+  const txs = txsForMonth(y, m);
+  const ingreso = ingresoTotal(y, m);
+  return CATS_GASTO.map(c => {
     const gastado = txs.filter(t=>t.tipo==='gasto'&&t.cat===c.id&&t.moneda==='ARS').reduce((a,t)=>a+Number(t.monto),0);
     const proj = ingreso * c.pct;
-    const pct = proj>0 ? Math.min(gastado/proj*100,100) : 0;
-    const over = gastado > proj && proj > 0;
-    return `<div class="cat-row">
-      <div class="cat-dot" style="background:${c.color}"></div>
-      <div class="cat-name">${c.name}</div>
-      <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${pct}%;background:${c.color}"></div></div>
-      <div class="cat-right">
-        <div class="cat-amounts ${over?'cat-over':''}">${fmt(gastado)}</div>
-        <div class="cat-pct">${proj>0?fmt(proj):Math.round(c.pct*100)+'%'}</div>
+    const ratio = proj>0 ? gastado/proj : 0;
+    let level = 'ok';
+    if(c.id!=='ahorro' && proj>0) {
+      if(ratio >= 1) level = 'over';
+      else if(ratio >= ALERT_WARN) level = 'warn';
+    }
+    return {c, gastado, proj, ratio, level};
+  });
+}
+
+function renderCatBars() {
+  const status = catBudgetStatus(state.curYear, state.curMonth);
+  document.getElementById('cat-bars').innerHTML = status.map(({c, gastado, proj, ratio, level}) => {
+    const pct = Math.min(ratio*100, 100);
+    let alert = '';
+    if(level==='warn') alert = `<div class="cat-alert warn">⚠️ ${Math.round(ratio*100)}% consumido · quedan ${fmt(proj-gastado)}</div>`;
+    if(level==='over') alert = `<div class="cat-alert over">🔴 ${Math.round(ratio*100)}% · excedido por ${fmt(gastado-proj)}</div>`;
+    return `<div class="cat-block">
+      <div class="cat-row">
+        <div class="cat-dot" style="background:${c.color}"></div>
+        <div class="cat-name">${c.name}</div>
+        <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${pct}%;background:${level==='over'?'var(--red)':c.color}"></div></div>
+        <div class="cat-right">
+          <div class="cat-amounts ${level==='over'?'cat-over':''}">${fmt(gastado)}</div>
+          <div class="cat-pct">${proj>0?fmt(proj):Math.round(c.pct*100)+'%'}</div>
+        </div>
       </div>
+      ${alert}
     </div>`;
   }).join('');
+  renderAlertsBanner(status);
+}
+
+function renderAlertsBanner(status) {
+  const over = status.filter(s=>s.level==='over');
+  const warn = status.filter(s=>s.level==='warn');
+  const el = document.getElementById('alerts-banner');
+  if(!over.length && !warn.length) { el.innerHTML = ''; return; }
+  const lines = [
+    ...over.map(s => `🔴 <b>${s.c.name}</b>: ${Math.round(s.ratio*100)}% — te pasaste ${fmt(s.gastado-s.proj)}`),
+    ...warn.map(s => `⚠️ <b>${s.c.name}</b>: ${Math.round(s.ratio*100)}% del presupuesto`),
+  ];
+  const n = over.length + warn.length;
+  const title = over.length ? 'Presupuesto excedido' : `${n} categoría${n>1?'s':''} cerca del límite`;
+  el.innerHTML = `<div class="alert-banner ${over.length?'over':''}">
+    <div class="alert-banner-title">${title}</div>
+    ${lines.join('<br>')}
+  </div>`;
+}
+
+// Resumen calculado de un mes a partir de los movimientos (se usa para el cierre y para el asesor)
+function monthSummary(y, m) {
+  const txs = txsForMonth(y, m);
+  const ingreso = ingresoTotal(y, m);
+  const status = catBudgetStatus(y, m);
+  const gastos = txs.filter(t=>t.tipo==='gasto'&&t.moneda==='ARS').reduce((a,t)=>a+Number(t.monto),0);
+  const gastosPorCat = {};
+  status.forEach(s => { gastosPorCat[s.c.id] = s.gastado; });
+  const ahorroCat = CATS_GASTO.find(c=>c.id==='ahorro');
+  const ahorroUsdt = txs.filter(t=>t.tipo==='gasto'&&t.cat==='ahorro'&&t.moneda==='USDT').reduce((a,t)=>a+Number(t.monto),0);
+
+  // "Gasto" real = todo menos ahorro
+  const consumo = status.filter(s=>s.c.id!=='ahorro');
+  const mayor = consumo.reduce((best,s) => s.gastado > (best?best.gastado:0) ? s : best, null);
+  // Mejor control: la categoría con uso dentro del presupuesto y menor % consumido
+  // (priorizando las que tuvieron algún gasto, para no premiar categorías sin movimientos)
+  const dentro = consumo.filter(s => s.proj>0 && s.gastado<=s.proj);
+  const conGasto = dentro.filter(s => s.gastado>0);
+  const pool = conGasto.length ? conGasto : dentro;
+  const mejor = pool.reduce((best,s) => !best || s.ratio < best.ratio ? s : best, null);
+
+  return {
+    mesKey: monthKey(y, m), y, m,
+    ingreso, gastos,
+    ahorroReal: gastosPorCat.ahorro || 0,
+    ahorroProj: ingreso * ahorroCat.pct,
+    ahorroUsdt,
+    catMayorGasto: mayor ? mayor.c.id : '',
+    catMejorControl: mejor ? mejor.c.id : '',
+    gastosPorCat,
+    hasData: txs.length>0 || ingreso>0,
+  };
 }
 
 function renderTrend() {
@@ -827,6 +988,102 @@ function renderTrend() {
       }
     }
   });
+}
+
+// HISTORIAL
+function catLabel(id) {
+  const c = CATS_GASTO.find(c=>c.id===id);
+  return c ? `${c.icon} ${c.name}` : '—';
+}
+function monthLabel(y, m) { return `${MONTHS_ES[m]} ${y}`; }
+
+function renderHistorial() {
+  const {curYear:y, curMonth:m} = state;
+  const yaCerrado = state.historial.some(h => h.mesKey===monthKey(y, m));
+  const btn = document.getElementById('close-month-btn');
+  btn.textContent = `${yaCerrado?'Actualizar cierre':'Cerrar mes actual'} · ${MONTHS_ES[m].slice(0,3)} ${y}`;
+  document.getElementById('close-month-hint').textContent = yaCerrado
+    ? `${monthLabel(y,m)} ya está cerrado. Si cargaste movimientos nuevos, podés volver a cerrarlo para actualizar el resumen.`
+    : `Guarda el resumen de ${monthLabel(y,m)} (el mes elegido en Resumen) en tu Google Sheet.`;
+
+  const list = document.getElementById('hist-list');
+  if(!state.historial.length) {
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">📅</div>Todavía no cerraste ningún mes. Cuando termine el mes, tocá "Cerrar mes actual".</div>';
+    return;
+  }
+  list.innerHTML = state.historial.map((h, i) => {
+    const balance = h.ingreso - h.gastos;
+    const gastoPct = h.ingreso>0 ? Math.min(h.gastos/h.ingreso*100, 100) : (h.gastos>0?100:0);
+    const mayorMonto = h.catMayorGasto ? (h.gastosPorCat[h.catMayorGasto]||0) : 0;
+    const mejorCat = CATS_GASTO.find(c=>c.id===h.catMejorControl);
+    const mejorPct = mejorCat && h.ingreso>0 ? Math.round((h.gastosPorCat[mejorCat.id]||0)/(h.ingreso*mejorCat.pct)*100) : null;
+    const ahorroOk = h.ahorroReal >= h.ahorroProj && h.ahorroProj>0;
+
+    // Objetivos alcanzados ese mes = completos en este cierre y no en el cierre anterior
+    const prev = state.historial[i+1];
+    const prevOk = new Set(((prev && prev.objetivos)||[]).filter(o=>o.ok).map(o=>o.id||o.n));
+    const objs = h.objetivos||[];
+    const nuevos = objs.filter(o => o.ok && !prevOk.has(o.id||o.n));
+    const pendientes = objs.filter(o => !o.ok);
+    let objTxt;
+    if(nuevos.length) objTxt = `<span class="c-green">🎯 Sí: ${nuevos.map(o=>esc(o.n)).join(', ')}</span>`;
+    else if(!objs.length) objTxt = 'Sin objetivos';
+    else objTxt = `No${pendientes.length ? ` · ${pendientes.length} en curso` : ''}`;
+
+    const cerrado = h.cerradoEl ? new Date(h.cerradoEl+'T00:00:00').toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'}) : '';
+    return `<div class="card">
+      <div class="hist-head">
+        <div class="hist-title">${monthLabel(h.y, h.m)}</div>
+        <div class="hist-date">${cerrado ? 'cerrado el '+cerrado : ''}</div>
+      </div>
+      <div class="hist-row"><span class="hist-k">Ingresos vs gastos</span><span class="hist-v"><span class="c-green">${fmt(h.ingreso)}</span> / <span class="c-red">${fmt(h.gastos)}</span></span></div>
+      <div class="hist-bar-track" title="Gastos sobre ingresos"><div class="hist-bar-fill" style="width:${gastoPct}%"></div></div>
+      <div class="hist-row"><span class="hist-k">Balance</span><span class="hist-v ${balance>=0?'c-green':'c-red'}">${fmt(balance)}</span></div>
+      <div class="hist-row"><span class="hist-k">Donde más gastaste</span><span class="hist-v">${h.catMayorGasto ? catLabel(h.catMayorGasto)+' · '+fmt(mayorMonto) : '—'}</span></div>
+      <div class="hist-row"><span class="hist-k">Mejor control</span><span class="hist-v">${mejorCat ? catLabel(mejorCat.id)+(mejorPct!==null?' · '+mejorPct+'% usado':'') : '—'}</span></div>
+      <div class="hist-row"><span class="hist-k">Ahorro real vs proyectado</span><span class="hist-v ${ahorroOk?'c-green':''}">${fmt(h.ahorroReal)} / ${fmt(h.ahorroProj)}${h.ahorroUsdt>0?' · +U$'+h.ahorroUsdt.toFixed(2):''}</span></div>
+      <div class="hist-row"><span class="hist-k">¿Llegaste a un objetivo?</span><span class="hist-v">${objTxt}</span></div>
+      <button class="hist-del" onclick="delHist('${esc(h.mesKey)}')">Eliminar este cierre</button>
+    </div>`;
+  }).join('');
+}
+
+async function closeCurrentMonth() {
+  const {curYear:y, curMonth:m} = state;
+  const summary = monthSummary(y, m);
+  if(!summary.hasData) { toast(`No hay movimientos en ${monthLabel(y,m)}`); return; }
+  const key = monthKey(y, m);
+  const yaCerrado = state.historial.some(h => h.mesKey===key);
+  if(!confirm(yaCerrado ? `¿Actualizar el cierre de ${monthLabel(y,m)} con los datos actuales?` : `¿Cerrar ${monthLabel(y,m)}? Se guarda un resumen en el historial.`)) return;
+
+  const {hasData, ...entry} = summary;
+  entry.objetivos = state.objs.map(o => ({id:o.id, n:o.nombre, pct:Math.round(Math.min(o.actual/o.meta,1)*100), ok:o.actual>=o.meta}));
+  const hoy = new Date();
+  entry.cerradoEl = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`;
+
+  state.historial = sortHistorial([...state.historial.filter(h => h.mesKey!==key), entry]);
+  saveState();
+  renderHistorial();
+
+  const btn = document.getElementById('close-month-btn');
+  btn.disabled = true;
+  try {
+    await syncHistorial();
+    toast(`${MONTHS_ES[m]} cerrado ✓`);
+  } catch(e) {
+    console.error(e);
+    toast('Se cerró en este dispositivo, pero falló Google Sheets');
+  }
+  btn.disabled = false;
+}
+
+function delHist(key) {
+  const h = state.historial.find(h => h.mesKey===key);
+  if(!h || !confirm(`¿Eliminar el cierre de ${monthLabel(h.y,h.m)}? Los movimientos no se borran.`)) return;
+  state.historial = state.historial.filter(h => h.mesKey!==key);
+  saveState();
+  renderHistorial();
+  syncHistorial().catch(e=>{ console.error(e); toast('No se pudo sincronizar con Google Sheets'); });
 }
 
 // TIPO TABS
@@ -996,11 +1253,17 @@ function buildContext() {
     const desvio = proj>0?Math.round((g/proj-1)*100):null;
     return `  - ${c.name}: gastado $${Math.round(g).toLocaleString('es-AR')} / proyectado $${Math.round(proj).toLocaleString('es-AR')}${desvio!==null?' ('+desvio+'%)':''}`;
   }).join('\n');
-  const objResumen = state.objs.length ? state.objs.map(o=>{
-    const pct=Math.round(o.actual/o.meta*100);
-    const meses=o.mensual>0?Math.ceil((o.meta-o.actual)/o.mensual):null;
-    return `  - ${o.nombre}: ${pct}% completado${meses?', ~'+meses+' meses para llegar':''}`;
-  }).join('\n') : '  (sin objetivos definidos)';
+  const completos = state.objs.filter(o => o.actual>=o.meta);
+  const pendientes = state.objs.filter(o => o.actual<o.meta);
+  const objResumen = state.objs.length ? [
+    `  Completados: ${completos.length} · Pendientes: ${pendientes.length}`,
+    ...completos.map(o => `  - ✔ ${o.nombre}: completado (${fmtU(o.actual,o.moneda)} de ${fmtU(o.meta,o.moneda)})`),
+    ...pendientes.map(o => {
+      const pct=Math.round(o.actual/o.meta*100);
+      const meses=o.mensual>0?Math.ceil((o.meta-o.actual)/o.mensual):null;
+      return `  - ${o.nombre}: ${pct}% completado${meses?', ~'+meses+' meses para llegar':', sin aporte mensual definido'}`;
+    }),
+  ].join('\n') : '  (sin objetivos definidos)';
   return `DATOS FINANCIEROS DEL USUARIO — ${MONTHS_ES[state.curMonth]} ${state.curYear}:
 Ingreso del mes: $${Math.round(ingreso).toLocaleString('es-AR')} ARS (manual $${Math.round(ingresoBase).toLocaleString('es-AR')} + registrado como transacciones $${Math.round(ingresoReg).toLocaleString('es-AR')})
 Total gastado (ARS): $${Math.round(gastos).toLocaleString('es-AR')}
@@ -1012,7 +1275,67 @@ ${catResumen}
 Objetivos de ahorro:
 ${objResumen}
 
+${buildHistoryContext(gastos, ingreso)}
+
 Contexto: La usuaria maneja finanzas personales en Buenos Aires, Argentina. Ahorra eventualmente en USDT. Usa un sistema de porcentajes sobre ingreso total.`;
+}
+
+// Historial de los 6 meses previos al mes elegido + tendencia de gastos.
+// Usa el cierre guardado si existe; si no, lo calcula desde los movimientos.
+function buildHistoryContext(gastosActual, ingresoActual) {
+  const $ = n => '$'+Math.round(n).toLocaleString('es-AR');
+  const meses = [];
+  for(let i=6;i>=1;i--) {
+    let m = state.curMonth-i, y = state.curYear;
+    if(m<0){ m+=12; y--; }
+    const cerrado = state.historial.find(h => h.mesKey===monthKey(y, m));
+    const s = cerrado || monthSummary(y, m);
+    if(cerrado || s.hasData) meses.push({...s, cerrado: !!cerrado});
+  }
+  if(!meses.length) return 'HISTORIAL (últimos 6 meses): sin datos de meses anteriores todavía.';
+
+  const lineas = meses.map(h => {
+    const porCat = CATS_GASTO.map(c => `${c.name} ${$(h.gastosPorCat[c.id]||0)}`).join(', ');
+    return `  - ${MONTHS_ES[h.m]} ${h.y}${h.cerrado?'':' (no cerrado, calculado de movimientos)'}: ingreso ${$(h.ingreso)}, gastos ${$(h.gastos)}${h.ingreso>0?' ('+Math.round(h.gastos/h.ingreso*100)+'% del ingreso)':''}, ahorro real ${$(h.ahorroReal)} vs proyectado ${$(h.ahorroProj)}${h.ahorroUsdt>0?' + U$'+Number(h.ahorroUsdt).toFixed(2):''}\n      por categoría: ${porCat}`;
+  });
+
+  const avg = arr => arr.reduce((a,b)=>a+b,0) / arr.length;
+  const avgGastos = avg(meses.map(h=>h.gastos));
+  const avgIngreso = avg(meses.map(h=>h.ingreso));
+  const avgAhorro = avg(meses.map(h=>h.ahorroReal));
+
+  // Mes elegido vs promedio (si es el mes en curso, se proyecta a fin de mes)
+  const hoy = new Date();
+  const esMesEnCurso = hoy.getFullYear()===state.curYear && hoy.getMonth()===state.curMonth;
+  const diasMes = new Date(state.curYear, state.curMonth+1, 0).getDate();
+  const gastosComparables = esMesEnCurso ? gastosActual / hoy.getDate() * diasMes : gastosActual;
+  const pctVsAvg = avgGastos>0 ? Math.round((gastosComparables/avgGastos-1)*100) : null;
+  const dir = p => p===null ? 'sin referencia' : p>5 ? `SUBIENDO (+${p}%)` : p<-5 ? `BAJANDO (${p}%)` : `estable (${p>=0?'+':''}${p}%)`;
+
+  // Tendencia dentro del historial: mitad más reciente vs mitad más antigua
+  let tendHist = 'no hay suficientes meses para calcularla';
+  if(meses.length>=2) {
+    const mitad = Math.floor(meses.length/2);
+    const viejos = avg(meses.slice(0, mitad).map(h=>h.gastos));
+    const recientes = avg(meses.slice(-mitad).map(h=>h.gastos));
+    tendHist = viejos>0 ? dir(Math.round((recientes/viejos-1)*100)) : 'sin referencia';
+  }
+
+  const catTend = catBudgetStatus(state.curYear, state.curMonth).filter(s=>s.c.id!=='ahorro').map(s => {
+    const prom = avg(meses.map(h=>h.gastosPorCat[s.c.id]||0));
+    return `  - ${s.c.name}: promedio ${$(prom)}/mes, este mes ${$(s.gastado)}`;
+  }).join('\n');
+
+  return `HISTORIAL (últimos ${meses.length} meses con datos, del más viejo al más nuevo):
+${lineas.join('\n')}
+
+TENDENCIA:
+  Promedio mensual histórico: ingreso ${$(avgIngreso)}, gastos ${$(avgGastos)}, ahorro real ${$(avgAhorro)}
+  Gastos de ${MONTHS_ES[state.curMonth]}: ${$(gastosActual)}${esMesEnCurso?` (mes en curso, día ${hoy.getDate()} de ${diasMes}; proyección lineal a fin de mes ${$(gastosComparables)})`:''} → vs promedio: ${dir(pctVsAvg)}
+  Ingreso de ${MONTHS_ES[state.curMonth]}: ${$(ingresoActual)} vs promedio ${$(avgIngreso)}
+  Evolución de gastos dentro del historial (meses recientes vs más antiguos): ${tendHist}
+  Por categoría:
+${catTend}`;
 }
 
 async function sendChat() {
@@ -1033,7 +1356,7 @@ async function sendChat() {
   const context = buildContext();
   state.chatHistory.push({role:'user',content:msg});
 
-  const systemPrompt = `Sos una asesora financiera personal para una mujer joven en Buenos Aires, Argentina. Sos directa, cálida y práctica. Conocés bien la realidad económica argentina (inflación, dólar, USDT como ahorro). Respondés siempre en español rioplatense (vos, che, etc.). Tus respuestas son concisas — máximo 3-4 párrafos. No usás listas largas ni lenguaje corporativo. Cuando el contexto lo permite, dás recomendaciones concretas y accionables.
+  const systemPrompt = `Sos una asesora financiera personal para una mujer joven en Buenos Aires, Argentina. Sos directa, cálida y práctica. Conocés bien la realidad económica argentina (inflación, dólar, USDT como ahorro). Respondés siempre en español rioplatense (vos, che, etc.). Tus respuestas son concisas — máximo 3-4 párrafos. No usás listas largas ni lenguaje corporativo. Cuando el contexto lo permite, dás recomendaciones concretas y accionables. Usá el historial y la tendencia para detectar patrones (categorías que se pasan seguido, gastos que suben mes a mes, ahorro por debajo de lo proyectado) y basá tus consejos en ese comportamiento, no solo en el mes actual. Si el mes está en curso, tené en cuenta que los datos son parciales.
 
 ${context}`;
 
