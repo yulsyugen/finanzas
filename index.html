@@ -252,6 +252,45 @@
   .hist-bar-track { height: 6px; background: var(--green-bg); border-radius: 3px; overflow: hidden; margin: 4px 0 8px; }
   .hist-bar-fill { height: 100%; background: var(--red); border-radius: 3px; }
   .hist-del { background: none; border: none; color: var(--text-muted); font-size: 12px; cursor: pointer; text-decoration: underline; margin-top: 8px; padding: 0; }
+
+  /* TARJETAS / TERCEROS */
+  .cuota-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-sec); }
+  .cuota-input { width: 64px; padding: 9px 10px; text-align: center; }
+  .tx-badge { display: inline-block; font-size: 10px; font-weight: 700; background: var(--blue-bg); color: var(--blue); padding: 2px 6px; border-radius: 4px; margin-left: 6px; vertical-align: 1px; }
+  .tx-badge.saldado { background: var(--green-bg); color: var(--green); }
+  .tx-item.tercero .tx-amount { color: var(--text-muted) !important; }
+  .mov-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .btn-mini { background: var(--green-bg); color: var(--green); border: none; border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 600; cursor: pointer; flex-shrink: 0; }
+  .btn-mini:active { opacity: .8; }
+
+  /* REINTEGROS */
+  .reint-head { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+  .reint-info { flex: 1; min-width: 0; }
+  .reint-name { font-size: 15px; font-weight: 700; }
+  .reint-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .reint-total { font-size: 16px; font-weight: 700; color: var(--green); text-align: right; }
+  .reint-chev { color: var(--text-muted); font-size: 12px; transition: transform .15s; }
+  .reint-card.open .reint-chev { transform: rotate(90deg); }
+  .reint-detail { display: none; margin-top: 10px; padding-top: 4px; border-top: 1px solid var(--border); }
+  .reint-card.open .reint-detail { display: block; }
+  .reint-actions { margin-top: 10px; display: flex; justify-content: flex-end; }
+
+  /* CONCILIACIÓN */
+  .concil-block.accent { border: 1.5px solid var(--blue); }
+  .concil-head { display: flex; justify-content: space-between; align-items: center; cursor: pointer; font-size: 14px; font-weight: 700; }
+  .concil-chev { color: var(--text-muted); font-size: 12px; transition: transform .15s; }
+  .concil-block.open .concil-chev { transform: rotate(90deg); }
+  .concil-body { display: none; margin-top: 8px; }
+  .concil-block.open .concil-body { display: block; }
+  .concil-item { padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .concil-item:last-child { border-bottom: none; }
+  .concil-top { display: flex; justify-content: space-between; gap: 10px; }
+  .concil-ctls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+  .concil-ctl { padding: 8px 10px; font-size: 13px; }
+  .concil-muted .tx-cat, .concil-muted .tx-amount { color: var(--text-muted); font-weight: 500; }
+  .concil-note { font-size: 12px; color: var(--text-muted); margin-top: 10px; line-height: 1.4; }
+  .concil-loading { text-align: center; padding: 1.5rem 1rem; color: var(--text-sec); font-size: 14px; }
+  .concil-loading .spinner { margin: 0 auto 0.75rem; }
 </style>
 </head>
 <body>
@@ -377,6 +416,11 @@
 <div id="page-movimientos" class="page">
   <div class="page-title" style="margin-bottom:1.25rem">Movimientos</div>
 
+  <div class="mov-actions">
+    <button class="btn-secondary" onclick="goTo('reintegros', navMov())">🤝 Reintegros</button>
+    <button class="btn-secondary" onclick="goTo('conciliar', navMov())">🧾 Conciliar resumen</button>
+  </div>
+
   <div class="card">
     <div class="tipo-tabs">
       <button class="tipo-tab active gasto" id="tab-gasto" onclick="setTipo('gasto')">Gasto</button>
@@ -385,6 +429,23 @@
     <div class="field-group">
       <label class="field-label">Categoría</label>
       <select class="field-select" id="tx-cat"></select>
+    </div>
+    <div class="field-group">
+      <label class="field-label">Método de pago</label>
+      <select class="field-select" id="tx-metodo" onchange="toggleCardFields()"></select>
+    </div>
+    <div id="tx-card-fields" style="display:none">
+      <div class="field-group">
+        <label class="field-label">¿De quién es este gasto?</label>
+        <input type="text" class="field-input" id="tx-responsable" placeholder="opcional — vacío = propio">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Cuotas (opcional — vacío = pago único)</label>
+        <div class="cuota-row">
+          Cuota <input type="number" class="field-input cuota-input" id="tx-cuota-act" inputmode="numeric" min="1">
+          de <input type="number" class="field-input cuota-input" id="tx-cuota-tot" inputmode="numeric" min="1">
+        </div>
+      </div>
     </div>
     <div class="field-row">
       <div class="field-group">
@@ -413,6 +474,47 @@
   </div>
 
   <div id="tx-list"></div>
+</div>
+
+<!-- REINTEGROS -->
+<div id="page-reintegros" class="page">
+  <div class="page-header">
+    <div style="display:flex;align-items:center;gap:10px">
+      <button class="btn-back" onclick="goTo('movimientos', navMov())" aria-label="Volver">‹</button>
+      <div class="page-title">Reintegros</div>
+    </div>
+  </div>
+  <div id="reint-list"></div>
+</div>
+
+<!-- CONCILIAR RESUMEN -->
+<div id="page-conciliar" class="page">
+  <div class="page-header">
+    <div style="display:flex;align-items:center;gap:10px">
+      <button class="btn-back" onclick="goTo('movimientos', navMov())" aria-label="Volver">‹</button>
+      <div class="page-title">Conciliar resumen</div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="field-group">
+      <label class="field-label">Resumen de la tarjeta (PDF)</label>
+      <input type="file" class="field-input" id="concil-file" accept=".pdf">
+    </div>
+    <div class="field-row">
+      <div class="field-group">
+        <label class="field-label">Tarjeta</label>
+        <select class="field-select" id="concil-tarjeta"></select>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Mes del resumen</label>
+        <input type="month" class="field-input" id="concil-mes">
+      </div>
+    </div>
+    <button class="btn-action" id="concil-btn" onclick="runConciliacion()">Leer resumen</button>
+    <div class="setup-hint">El PDF no se guarda ni se sube a Google Sheets: se lee en memoria y solo el texto se envía a la IA para interpretarlo.</div>
+  </div>
+  <div id="concil-status"></div>
+  <div id="concil-result"></div>
 </div>
 
 <!-- OBJETIVOS -->
@@ -553,6 +655,15 @@ const CATS_INGRESO = [
   {id:'freelance', name:'Freelance', icon:'💻'},
   {id:'otro-ingreso', name:'Otro ingreso', icon:'➕'},
 ];
+const METODOS_PAGO = [
+  {id:'transferencia',     name:'Transferencia',     icon:'🏦'},
+  {id:'efectivo',          name:'Efectivo',          icon:'💵'},
+  {id:'debito-automatico', name:'Débito automático', icon:'🔁'},
+  {id:'visa',              name:'Visa',              icon:'💳'},
+  {id:'master',            name:'Mastercard',        icon:'💳'},
+  {id:'mercado-credito',   name:'Mercado Crédito',   icon:'💳'},
+];
+const CARD_METODOS = ['visa','master','mercado-credito'];
 const MONTHS_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
 // GOOGLE OAUTH + SHEETS
@@ -560,7 +671,7 @@ const GOOGLE_CLIENT_ID = '424767622838-069e27ifl3celr4q92bh9vmtu7k0t91g.apps.goo
 const SHEET_ID = '1ApXsc7TNusVWOg_cHYDR4V_GrLpQVik1CyLJK8RLbIg';
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 const SHEET_SCHEMA = {
-  transacciones: ['id','tipo','cat','monto','moneda','fecha','desc'],
+  transacciones: ['id','tipo','cat','monto','moneda','fecha','desc','metodoPago','responsable','saldado','cuotaActual','cuotaTotal'],
   objetivos: ['id','nombre','meta','actual','mensual','moneda'],
   ingresos: ['mesKey','monto'],
   proyeccion: ['id','tipo','nombre','categoria','monto','moneda','frecuencia','mesInicio'],
@@ -757,7 +868,7 @@ async function ensureSheetStructure() {
 
 async function loadAllFromSheet() {
   const [txRes, objRes, ingRes, histRes, projRes] = await Promise.all([
-    sheetsApi('/values/transacciones!A2:G'),
+    sheetsApi('/values/transacciones!A2:L'),
     sheetsApi('/values/objetivos!A2:F'),
     sheetsApi('/values/ingresos!A2:B'),
     sheetsApi('/values/historial!A2:K?valueRenderOption=UNFORMATTED_VALUE'),
@@ -766,6 +877,8 @@ async function loadAllFromSheet() {
   state.txs = (txRes.values||[]).filter(r=>r.length).map(r => ({
     id: r[0]||genId(), tipo: r[1]||'gasto', cat: r[2]||'', monto: parseFloat(r[3])||0,
     moneda: r[4]||'ARS', fecha: r[5]||'', desc: r[6]||'',
+    metodoPago: r[7]||'', responsable: r[8]||'', saldado: r[9]||'',
+    cuotaActual: parseInt(r[10])||null, cuotaTotal: parseInt(r[11])||null,
   }));
   state.objs = (objRes.values||[]).filter(r=>r.length).map(r => ({
     id: r[0]||genId(), nombre: r[1]||'', meta: parseFloat(r[2])||0, actual: parseFloat(r[3])||0,
@@ -811,8 +924,9 @@ async function overwriteSheetData(sheetName, numCols, rows) {
 }
 
 function syncTxs() {
-  const rows = state.txs.map(t => [t.id, t.tipo, t.cat, t.monto, t.moneda, t.fecha, t.desc||'']);
-  overwriteSheetData('transacciones', 7, rows).then(renderDashboard).catch(e=>{ console.error(e); toast('No se pudo sincronizar con Google Sheets'); });
+  const rows = state.txs.map(t => [t.id, t.tipo, t.cat, t.monto, t.moneda, t.fecha, t.desc||'',
+    t.metodoPago||'', t.responsable||'', t.saldado||'', t.cuotaActual||'', t.cuotaTotal||'']);
+  overwriteSheetData('transacciones', 12, rows).then(renderDashboard).catch(e=>{ console.error(e); toast('No se pudo sincronizar con Google Sheets'); });
 }
 function syncObjs() {
   const rows = state.objs.map(o => [o.id, o.nombre, o.meta, o.actual, o.mensual, o.moneda]);
@@ -866,6 +980,8 @@ function promptApiKey() {
 function initApp() {
   const today = new Date().toISOString().split('T')[0];
   document.getElementById('tx-fecha').value = today;
+  document.getElementById('tx-metodo').innerHTML = METODOS_PAGO.map(mp=>`<option value="${mp.id}">${mp.icon} ${mp.name}</option>`).join('');
+  document.getElementById('concil-tarjeta').innerHTML = METODOS_PAGO.filter(mp=>CARD_METODOS.includes(mp.id)).map(mp=>`<option value="${mp.id}">${mp.name}</option>`).join('');
   populateCatSelect();
   renderAll();
 }
@@ -904,8 +1020,12 @@ function goTo(pg, btn) {
   if(pg==='asesor') renderAsesor();
   if(pg==='historial') renderHistorial();
   if(pg==='proyeccion') renderProyeccion();
+  if(pg==='reintegros') renderReintegros();
+  if(pg==='conciliar') renderConciliar();
   document.getElementById('main').scrollTop = 0;
 }
+
+const navMov = () => document.querySelectorAll('.nav-item')[1];
 
 function changeMonth(d) {
   state.curMonth += d;
@@ -926,8 +1046,15 @@ function renderDashboard() {
   renderTrend();
 }
 
+// Un gasto con responsable cargado es de otra persona: no cuenta en las métricas propias
+const esPropio = t => !String(t.responsable||'').trim();
+// Transacciones viejas sin método de pago se tratan como transferencia
+const metodoDe = t => t.metodoPago || 'transferencia';
+const metodoLabel = id => (METODOS_PAGO.find(mp=>mp.id===id)||METODOS_PAGO[0]).name;
+
 function txsForMonth(y, m) {
   return state.txs.filter(t => {
+    if(!esPropio(t)) return false;
     const dt = new Date(t.fecha+'T00:00:00');
     return dt.getMonth()===m && dt.getFullYear()===y;
   });
@@ -1227,15 +1354,49 @@ function projAppliesTo(p, y, m) {
 }
 
 // Próximos 12 meses desde hoy, con totales por moneda (nunca se mezclan ARS y USDT)
+// Cuotas futuras de compras propias en cuotas. No se guardan en la hoja "proyeccion":
+// se calculan en cada render a partir de las transacciones. Si hay varias cuotas cargadas
+// de la misma compra (misma tarjeta, moneda, monto, total de cuotas y mes de la cuota 1)
+// se usa la más reciente, para no proyectar dos veces las mismas cuotas.
+function cuotasPendientes() {
+  const hoy = new Date();
+  const desde = hoy.getFullYear()*12 + hoy.getMonth();
+  const series = new Map();
+  state.txs.forEach(t => {
+    if(t.tipo!=='gasto' || !esPropio(t)) return;
+    const act = Number(t.cuotaActual), tot = Number(t.cuotaTotal);
+    if(!act || !tot || act>tot) return;
+    const [y, m] = String(t.fecha).split('-').map(Number);
+    if(!y || !m) return;
+    const idx = y*12 + (m-1);
+    const key = [metodoDe(t), t.moneda, tot, Math.round(t.monto), idx-act].join('|');
+    const prev = series.get(key);
+    if(!prev || act > prev.act) series.set(key, {t, act, tot, idx});
+  });
+  const out = [];
+  series.forEach(({t, act, tot, idx}) => {
+    const comercio = t.desc || (CATS_GASTO.find(c=>c.id===t.cat)||{name:'Compra en cuotas'}).name;
+    for(let n=act+1; n<=tot; n++) {
+      const i = idx + (n-act);
+      if(i < desde) continue;
+      out.push({esCuota:true, tipo:'gasto', y:Math.floor(i/12), m:i%12, nombre:`Cuota ${n}/${tot} — ${comercio}`,
+        categoria:t.cat, monto:Number(t.monto), moneda:t.moneda});
+    }
+  });
+  return out;
+}
+const hayProyeccion = () => state.proyeccion.length>0 || cuotasPendientes().length>0;
+
 function computeProjection() {
   const hoy = new Date();
+  const cuotas = cuotasPendientes();
   const acum = {ARS:0, USDT:0};
   const total = {ARS:{ing:0,gas:0,ahorro:0}, USDT:{ing:0,gas:0,ahorro:0}};
   const months = [];
   for(let i=0;i<12;i++) {
     const d = new Date(hoy.getFullYear(), hoy.getMonth()+i, 1);
     const y = d.getFullYear(), m = d.getMonth();
-    const items = state.proyeccion.filter(p => projAppliesTo(p, y, m));
+    const items = [...state.proyeccion.filter(p => projAppliesTo(p, y, m)), ...cuotas.filter(c => c.y===y && c.m===m)];
     const tot = {};
     MONEDAS.forEach(mon => {
       const ing = items.filter(p=>p.tipo==='ingreso'&&p.moneda===mon).reduce((a,p)=>a+Number(p.monto),0);
@@ -1246,7 +1407,7 @@ function computeProjection() {
     });
     months.push({y, m, items, tot});
   }
-  const usadas = MONEDAS.filter(mon => state.proyeccion.some(p=>p.moneda===mon));
+  const usadas = MONEDAS.filter(mon => state.proyeccion.some(p=>p.moneda===mon) || cuotas.some(c=>c.moneda===mon));
   return {months, total, usadas};
 }
 
@@ -1268,7 +1429,7 @@ function renderProyeccion() {
   renderProjList();
   const summary = document.getElementById('proj-summary');
   const timeline = document.getElementById('proj-timeline');
-  if(!state.proyeccion.length) {
+  if(!hayProyeccion()) {
     summary.innerHTML = '<div class="card"><div class="empty-state"><div class="empty-icon">📈</div>Cargá tus ingresos y gastos esperados para ver tu proyección</div></div>';
     timeline.innerHTML = '';
     return;
@@ -1306,7 +1467,7 @@ function renderProyeccion() {
       return `<div class="proj-usdt">${mon}: +${fmtP(t.ing,mon)} · −${fmtP(t.gas,mon)} · disponible ${fmtP(t.disp,mon)}</div>`;
     }).join('');
     const detalle = mo.items.length ? [...mo.items].sort((x,y)=>x.tipo.localeCompare(y.tipo)).map(p =>
-      `<div class="proj-detail-row"><span>${p.tipo==='ingreso'?'➕':'➖'} ${esc(p.nombre)}${p.tipo==='gasto'&&p.categoria?' · '+projCatLabel(p.categoria):''}</span><span class="${p.tipo==='ingreso'?'c-green':'c-red'}">${fmtP(p.monto,p.moneda)}</span></div>`
+      `<div class="proj-detail-row"><span>${p.tipo==='ingreso'?'➕':p.esCuota?'💳':'➖'} ${esc(p.nombre)}${p.tipo==='gasto'&&p.categoria?' · '+projCatLabel(p.categoria):''}</span><span class="${p.tipo==='ingreso'?'c-green':'c-red'}">${fmtP(p.monto,p.moneda)}</span></div>`
     ).join('') : '<div class="proj-detail-row">Sin ingresos ni gastos proyectados</div>';
     return `<div class="card proj-month ${projOpen.has(key)?'open':''}" onclick="toggleProjMonth('${key}', this)">
       <div class="proj-month-head">
@@ -1394,7 +1555,7 @@ function delProj(id) {
 
 function renderDashProjLink() {
   const el = document.getElementById('dash-proj-link');
-  if(!state.proyeccion.length) { el.style.display = 'none'; return; }
+  if(!hayProyeccion()) { el.style.display = 'none'; return; }
   const proj = computeProjection();
   const mon = proj.usadas.includes('ARS') ? 'ARS' : 'USDT';
   const ahorro = proj.total[mon].ahorro;
@@ -1410,6 +1571,13 @@ function setTipo(tipo) {
   document.getElementById('tab-gasto').classList.toggle('active', tipo==='gasto');
   document.getElementById('tab-ingreso').classList.toggle('active', tipo==='ingreso');
   populateCatSelect();
+  toggleCardFields();
+}
+
+// Responsable y cuotas solo aplican a gastos con tarjeta de crédito
+function toggleCardFields() {
+  const card = txTipo==='gasto' && CARD_METODOS.includes(document.getElementById('tx-metodo').value);
+  document.getElementById('tx-card-fields').style.display = card ? 'block' : 'none';
 }
 
 function populateCatSelect() {
@@ -1426,13 +1594,27 @@ function addTx() {
   const fecha = document.getElementById('tx-fecha').value;
   const desc = document.getElementById('tx-desc').value.trim();
   if(!fecha){toast('Seleccioná una fecha');return;}
-  state.txs.push({id:genId(),tipo:txTipo,cat,monto,moneda,fecha,desc});
+  const metodoPago = document.getElementById('tx-metodo').value || 'transferencia';
+  const esTarjeta = txTipo==='gasto' && CARD_METODOS.includes(metodoPago);
+  const responsable = esTarjeta ? document.getElementById('tx-responsable').value.trim() : '';
+  const cAct = esTarjeta ? parseInt(document.getElementById('tx-cuota-act').value) : NaN;
+  const cTot = esTarjeta ? parseInt(document.getElementById('tx-cuota-tot').value) : NaN;
+  let cuotaActual = null, cuotaTotal = null;
+  if(cAct || cTot) {
+    if(!(cAct>=1 && cTot>=1 && cAct<=cTot)){toast('Revisá las cuotas (ej: cuota 3 de 6)');return;}
+    cuotaActual = cAct; cuotaTotal = cTot;
+  }
+  state.txs.push({id:genId(),tipo:txTipo,cat,monto,moneda,fecha,desc,metodoPago,responsable,saldado:responsable?'no':'',cuotaActual,cuotaTotal});
   document.getElementById('tx-monto').value='';
   document.getElementById('tx-desc').value='';
+  document.getElementById('tx-responsable').value='';
+  document.getElementById('tx-cuota-act').value='';
+  document.getElementById('tx-cuota-tot').value='';
   saveState();
   syncTxs();
   renderTxList();
   renderDashboard();
+  if(cuotaTotal) renderProyeccion();
   toast('Movimiento registrado ✓');
 }
 
@@ -1459,11 +1641,18 @@ function renderTxList() {
     const color = catObj && catObj.color ? catObj.color : (t.tipo==='ingreso'?'#1baf7a':'#e34948');
     const sign = t.tipo==='ingreso' ? '+' : '−';
     const amtColor = t.tipo==='ingreso' ? '#1baf7a' : 'var(--text)';
-    return `<div class="tx-item">
+    const tercero = !esPropio(t);
+    const badge = tercero ? `<span class="tx-badge ${t.saldado==='si'?'saldado':''}">👤 ${esc(t.responsable)}${t.saldado==='si'?' ✓':''}</span>` : '';
+    const metodo = metodoDe(t);
+    const extra = [
+      metodo!=='transferencia' ? (CARD_METODOS.includes(metodo)?'💳 ':'')+metodoLabel(metodo) : '',
+      t.cuotaTotal ? `cuota ${t.cuotaActual}/${t.cuotaTotal}` : '',
+    ].filter(Boolean).join(' · ');
+    return `<div class="tx-item ${tercero?'tercero':''}">
       <div class="tx-dot" style="background:${color}22">${icon}</div>
       <div class="tx-info">
-        <div class="tx-cat">${name}</div>
-        <div class="tx-desc">${t.desc||t.fecha}</div>
+        <div class="tx-cat">${name}${badge}</div>
+        <div class="tx-desc">${esc(t.desc||t.fecha)}${extra?' · '+extra:''}</div>
       </div>
       <div class="tx-right">
         <div class="tx-amount" style="color:${amtColor}">${sign}${fmtU(t.monto,t.moneda)}</div>
@@ -1472,6 +1661,324 @@ function renderTxList() {
       <button class="tx-del" onclick="delTx('${t.id}')">×</button>
     </div>`;
   }).join('')+'</div>';
+}
+
+const fechaCorta = f => f ? String(f).slice(0,10).split('-').reverse().slice(0,2).join('/') : '';
+
+// REINTEGROS — gastos con tarjeta prestada que todavía no te devolvieron
+let reintGroups = [];
+const reintOpen = new Set();
+
+function pendingReintegros() {
+  const groups = new Map();
+  state.txs.forEach(t => {
+    const nombre = String(t.responsable||'').trim();
+    if(!nombre || t.saldado==='si') return;
+    const key = nombre.toLowerCase();
+    if(!groups.has(key)) groups.set(key, {key, nombre, txs:[], ARS:0, USDT:0});
+    const g = groups.get(key);
+    g.txs.push(t);
+    g[t.moneda==='USDT'?'USDT':'ARS'] += Number(t.monto);
+  });
+  return [...groups.values()].sort((a,b) => (b.ARS-a.ARS) || (b.USDT-a.USDT));
+}
+
+const fmtDeuda = (ars, usdt) => [ars>0||!usdt ? fmt(ars) : '', usdt>0 ? fmtU(usdt,'USDT') : ''].filter(Boolean).join(' + ');
+
+function renderReintegros() {
+  reintGroups = pendingReintegros();
+  const el = document.getElementById('reint-list');
+  if(!reintGroups.length) {
+    el.innerHTML = '<div class="card"><div class="empty-state"><div class="empty-icon">🤝</div>No te deben nada</div></div>';
+    return;
+  }
+  const totARS = reintGroups.reduce((a,g)=>a+g.ARS,0);
+  const totUSDT = reintGroups.reduce((a,g)=>a+g.USDT,0);
+  const n = reintGroups.reduce((a,g)=>a+g.txs.length,0);
+  el.innerHTML = `<div class="card balance-hero">
+      <div class="balance-label">Total a cobrar</div>
+      <div class="balance-value c-green">${fmtDeuda(totARS, totUSDT)}</div>
+      <div class="balance-sub">${n} consumo${n!==1?'s':''} · ${reintGroups.length} persona${reintGroups.length!==1?'s':''}</div>
+    </div>` + reintGroups.map((g, i) => {
+    const rows = [...g.txs].sort((a,b)=>b.fecha.localeCompare(a.fecha)).map(t => `<div class="tx-item">
+        <div class="tx-info">
+          <div class="tx-cat">${esc(t.desc || catLabel(t.cat))}</div>
+          <div class="tx-desc">${fechaCorta(t.fecha)} · ${metodoLabel(metodoDe(t))}${t.cuotaTotal?` · cuota ${t.cuotaActual}/${t.cuotaTotal}`:''}</div>
+        </div>
+        <div class="tx-right"><div class="tx-amount">${fmtU(t.monto,t.moneda)}</div></div>
+        <button class="btn-mini" onclick="saldarTx('${t.id}')">Saldado</button>
+      </div>`).join('');
+    return `<div class="card reint-card ${reintOpen.has(g.key)?'open':''}">
+      <div class="reint-head" onclick="toggleReint(${i}, this)">
+        <div class="reint-info">
+          <div class="reint-name">👤 ${esc(g.nombre)}</div>
+          <div class="reint-sub">${g.txs.length} consumo${g.txs.length!==1?'s':''}</div>
+        </div>
+        <div class="reint-total">${fmtDeuda(g.ARS, g.USDT)}</div>
+        <span class="reint-chev">›</span>
+      </div>
+      <div class="reint-detail">${rows}</div>
+      <div class="reint-actions"><button class="btn-mini" onclick="saldarPersona(${i})">Marcar como saldado</button></div>
+    </div>`;
+  }).join('');
+}
+
+function toggleReint(i, el) {
+  const g = reintGroups[i];
+  if(!g) return;
+  if(reintOpen.has(g.key)) reintOpen.delete(g.key); else reintOpen.add(g.key);
+  el.parentElement.classList.toggle('open', reintOpen.has(g.key));
+}
+
+function saldarPersona(i) {
+  const g = reintGroups[i];
+  if(!g || !confirm(`¿Marcar como saldado${g.txs.length!==1?'s los '+g.txs.length+' consumos':' el consumo'} de ${g.nombre}?`)) return;
+  g.txs.forEach(t => { t.saldado = 'si'; });
+  afterSaldar();
+}
+
+function saldarTx(id) {
+  const t = state.txs.find(t => t.id===id);
+  if(!t) return;
+  t.saldado = 'si';
+  afterSaldar();
+}
+
+function afterSaldar() {
+  saveState();
+  syncTxs();
+  renderReintegros();
+  renderTxList();
+  toast('Marcado como saldado ✓');
+}
+
+// CONCILIACIÓN DE RESUMEN — el PDF solo se procesa en memoria, nunca se guarda
+const PDFJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+const PDFJS_WORKER_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const CONCIL_ERR_LECTURA = 'No se pudo leer el resumen. Puede que sea un PDF escaneado en vez de texto.';
+const MONTO_TOLERANCIA = 1;  // $1 por redondeos
+const DIAS_TOLERANCIA = 3;
+let pdfjsPromise = null;
+let concil = null; // {tarjeta, mes, faltan, coinciden, soloApp}
+const concilOpen = {faltan:true, coinciden:false, soloApp:false};
+const concilFail = msg => Object.assign(new Error(msg), {userMsg: msg});
+
+function renderConciliar() {
+  const mes = document.getElementById('concil-mes');
+  if(!mes.value) { const h=new Date(); mes.value = ymKey(h.getFullYear(), h.getMonth()); }
+  renderConcilResult();
+}
+
+// PDF.js se carga recién cuando se usa, para no demorar el arranque de la app
+function loadPdfJs() {
+  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if(!pdfjsPromise) pdfjsPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = PDFJS_URL;
+    s.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_URL; resolve(window.pdfjsLib); };
+    s.onerror = () => { pdfjsPromise = null; reject(concilFail('No se pudo cargar el lector de PDF. Revisá tu conexión.')); };
+    document.head.appendChild(s);
+  });
+  return pdfjsPromise;
+}
+
+async function extractPdfText(file) {
+  const pdfjs = await loadPdfJs();
+  let pdf;
+  try {
+    pdf = await pdfjs.getDocument({data: await file.arrayBuffer()}).promise;
+  } catch(e) {
+    if(e && e.name==='PasswordException') throw concilFail('El PDF está protegido con contraseña. Guardalo sin contraseña y volvé a intentar.');
+    throw concilFail(CONCIL_ERR_LECTURA);
+  }
+  const pages = [];
+  for(let i=1; i<=pdf.numPages; i++) {
+    const content = await (await pdf.getPage(i)).getTextContent();
+    pages.push(content.items.map(it => it.str + (it.hasEOL ? '\n' : ' ')).join(''));
+  }
+  return pages.join('\n');
+}
+
+async function parseResumenConClaude(texto, mes) {
+  const [y, m] = mes.split('-').map(Number);
+  const prompt = `Este es el texto extraído de un resumen de tarjeta de crédito argentino, correspondiente a ${MONTHS_ES[m-1]} ${y}.
+
+Devolvé EXCLUSIVAMENTE un array JSON, sin ningún texto antes ni después y sin bloques de código, con esta forma:
+[{"fecha":"YYYY-MM-DD","comercio":"...","monto":123.45,"moneda":"ARS","cuotaActual":null,"cuotaTotal":null}]
+
+Reglas:
+- Incluí solo consumos individuales. Ignorá totales, subtotales, impuestos, percepciones, sellos, intereses, cargos financieros, pagos realizados y saldos anteriores.
+- "monto" es un número positivo con punto decimal (por ejemplo "12.345,67" es 12345.67).
+- "moneda" es "ARS" para pesos o "USD" para dólares.
+- Cuando el consumo es una cuota (formatos como "03/06", "3 de 6", "C.03/06", "Cuota 03/06"), completá cuotaActual y cuotaTotal con números (3 y 6). Si es un pago único, dejalos en null.
+- "fecha" es la fecha del consumo tal como figura en el resumen. Si no trae año, deducilo a partir del mes del resumen.
+- Si no encontrás ningún consumo, devolvé [].
+
+TEXTO DEL RESUMEN:
+${texto}`;
+
+  const res = await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','x-api-key':state.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({
+      model:'claude-sonnet-4-6',
+      max_tokens:8000,
+      messages:[{role:'user',content:prompt}]
+    })
+  });
+  const data = await res.json();
+  if(data.error){throw new Error(data.error.message);}
+  const raw = (data.content||[]).map(c=>c.text||'').join('').trim();
+  let arr;
+  try {
+    arr = JSON.parse(raw.slice(raw.indexOf('['), raw.lastIndexOf(']')+1));
+  } catch(e) { throw concilFail(CONCIL_ERR_LECTURA); }
+  if(!Array.isArray(arr)) throw concilFail(CONCIL_ERR_LECTURA);
+  const items = arr.map(r => {
+    let cuotaActual = parseInt(r && r.cuotaActual)||null, cuotaTotal = parseInt(r && r.cuotaTotal)||null;
+    if(!cuotaActual || !cuotaTotal || cuotaActual>cuotaTotal) { cuotaActual = null; cuotaTotal = null; }
+    return {
+      fecha: String((r && r.fecha)||'').slice(0,10),
+      comercio: String((r && r.comercio)||'').trim() || 'Consumo',
+      monto: Number(r && r.monto),
+      moneda: String((r && r.moneda)||'ARS').toUpperCase()==='ARS' ? 'ARS' : 'USDT',
+      cuotaActual, cuotaTotal,
+    };
+  }).filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.fecha) && r.monto>0);
+  if(!items.length) throw concilFail(CONCIL_ERR_LECTURA);
+  return items;
+}
+
+// Las cuotas 2 en adelante figuran en el resumen con la fecha de la compra original:
+// en la app se ubican en el mes del resumen (mismo día), que es cuando se pagan.
+function fechaEnMes(fecha, mes) {
+  const [y, m] = mes.split('-').map(Number);
+  const d = Math.min(Number(fecha.slice(8,10))||1, new Date(y, m, 0).getDate());
+  return `${mes}-${String(d).padStart(2,'0')}`;
+}
+
+// Coincidencia = mismo monto (±$1) y fecha a 3 días o menos. Nunca por nombre de comercio.
+// Se buscan coincidencias en todos los gastos de esa tarjeta (un consumo del 29 del mes
+// anterior puede venir en este resumen), pero el bloque "en la app pero no en el resumen"
+// muestra solo los del mes elegido.
+function compararResumen(items, tarjeta, mes) {
+  const deTarjeta = state.txs.filter(t => t.tipo==='gasto' && metodoDe(t)===tarjeta);
+  const dias = (a, b) => Math.abs(Date.parse(a+'T00:00:00') - Date.parse(b+'T00:00:00')) / 86400000;
+  const usados = new Set();
+  const faltan = [], coinciden = [];
+  items.forEach(r => {
+    const fechaApp = r.cuotaActual>1 && !r.fecha.startsWith(mes) ? fechaEnMes(r.fecha, mes) : r.fecha;
+    let best = null;
+    deTarjeta.forEach(t => {
+      if(usados.has(t.id) || t.moneda!==r.moneda || Math.abs(Number(t.monto)-r.monto) > MONTO_TOLERANCIA) return;
+      const d = dias(t.fecha, fechaApp);
+      if(d <= DIAS_TOLERANCIA && (!best || d < best.d)) best = {t, d};
+    });
+    if(best) { usados.add(best.t.id); coinciden.push({r, t:best.t}); }
+    else faltan.push({...r, fechaApp, cat:'', responsable:''});
+  });
+  const soloApp = deTarjeta.filter(t => String(t.fecha).startsWith(mes) && !usados.has(t.id)).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  return {tarjeta, mes, faltan, coinciden, soloApp};
+}
+
+async function runConciliacion() {
+  const file = document.getElementById('concil-file').files[0];
+  const tarjeta = document.getElementById('concil-tarjeta').value;
+  const mes = document.getElementById('concil-mes').value;
+  if(!file){toast('Elegí el PDF del resumen');return;}
+  if(!/\.pdf$/i.test(file.name)){toast('El archivo tiene que ser un PDF');return;}
+  if(!/^\d{4}-\d{2}$/.test(mes)){toast('Elegí el mes del resumen');return;}
+  if(!state.apiKey){toast('Configurá tu API key primero');promptApiKey();if(!state.apiKey)return;}
+
+  const btn = document.getElementById('concil-btn');
+  const status = document.getElementById('concil-status');
+  btn.disabled = true;
+  concil = null;
+  renderConcilResult();
+  status.innerHTML = '<div class="card concil-loading"><div class="spinner"></div>Leyendo el resumen...</div>';
+  try {
+    const texto = await extractPdfText(file);
+    if(texto.replace(/\s+/g,'').length < 50) throw concilFail(CONCIL_ERR_LECTURA);
+    const items = await parseResumenConClaude(texto, mes);
+    concil = compararResumen(items, tarjeta, mes);
+    Object.assign(concilOpen, {faltan:true, coinciden:false, soloApp:false});
+    status.innerHTML = '';
+    renderConcilResult();
+  } catch(e) {
+    console.error(e);
+    status.innerHTML = `<div class="alert-banner over">${esc(e.userMsg || 'Error al conectar con la IA. Verificá tu API key.')}</div>`;
+  }
+  btn.disabled = false;
+}
+
+function toggleConcilBlock(id, el) {
+  concilOpen[id] = !concilOpen[id];
+  el.parentElement.classList.toggle('open', concilOpen[id]);
+}
+
+function renderConcilResult() {
+  const el = document.getElementById('concil-result');
+  if(!concil) { el.innerHTML = ''; return; }
+  const {faltan, coinciden, soloApp} = concil;
+  const cuotaTxt = r => r.cuotaTotal ? ` · Cuota ${r.cuotaActual}/${r.cuotaTotal}` : '';
+  const catOpts = sel => `<option value="" ${!sel?'selected':''}>Categoría…</option>`
+    + CATS_GASTO.map(c=>`<option value="${c.id}" ${c.id===sel?'selected':''}>${c.icon} ${c.name}</option>`).join('');
+  const block = (id, titulo, body, cls) => `<div class="card concil-block ${concilOpen[id]?'open':''} ${cls||''}">
+      <div class="concil-head" onclick="toggleConcilBlock('${id}', this)"><span>${titulo}</span><span class="concil-chev">›</span></div>
+      <div class="concil-body">${body}</div>
+    </div>`;
+
+  const faltanBody = faltan.length ? faltan.map((f, i) => `<div class="concil-item">
+      <div class="concil-top">
+        <div class="tx-info"><div class="tx-cat">${esc(f.comercio)}</div><div class="tx-desc">${fechaCorta(f.fecha)}${cuotaTxt(f)}</div></div>
+        <div class="tx-amount">${fmtU(f.monto, f.moneda)}</div>
+      </div>
+      <div class="concil-ctls">
+        <select class="field-select concil-ctl" onchange="concil.faltan[${i}].cat=this.value">${catOpts(f.cat)}</select>
+        <input type="text" class="field-input concil-ctl" placeholder="¿De quién? (opcional)" value="${esc(f.responsable)}" oninput="concil.faltan[${i}].responsable=this.value">
+      </div>
+    </div>`).join('') : '<div class="tx-desc" style="padding:6px 0">Todo lo del resumen ya está cargado 🎉</div>';
+
+  const coinBody = coinciden.length ? coinciden.map(({r, t}) => `<div class="concil-item concil-muted">
+      <div class="concil-top">
+        <div class="tx-info"><div class="tx-cat">${esc(r.comercio)}</div><div class="tx-desc">${fechaCorta(r.fecha)}${cuotaTxt(r)} · en la app: ${esc(t.desc || catLabel(t.cat))}</div></div>
+        <div class="tx-amount">${fmtU(r.monto, r.moneda)}</div>
+      </div>
+    </div>`).join('') : '<div class="tx-desc" style="padding:6px 0">Ninguno</div>';
+
+  const soloBody = (soloApp.length ? soloApp.map(t => `<div class="concil-item">
+      <div class="concil-top">
+        <div class="tx-info"><div class="tx-cat">${esc(t.desc || catLabel(t.cat))}</div><div class="tx-desc">${fechaCorta(t.fecha)}${cuotaTxt(t)}</div></div>
+        <div class="tx-amount">${fmtU(t.monto, t.moneda)}</div>
+      </div>
+    </div>`).join('') : '<div class="tx-desc" style="padding:6px 0">Ninguno</div>')
+    + '<div class="concil-note">Pueden ser consumos que todavía no cerraron en el resumen, o movimientos cargados por error.</div>';
+
+  const n = faltan.length;
+  el.innerHTML = (n ? `<button class="btn-action" style="margin-bottom:0.875rem" onclick="cargarFaltantes()">Cargar ${n===1?'el movimiento':'los '+n+' movimientos'}</button>` : '')
+    + block('faltan', `Faltan cargar (${n})`, faltanBody, 'accent')
+    + block('coinciden', `Coinciden (${coinciden.length})`, coinBody)
+    + block('soloApp', `Están en la app pero no en el resumen (${soloApp.length})`, soloBody);
+}
+
+function cargarFaltantes() {
+  if(!concil || !concil.faltan.length) return;
+  const nuevos = concil.faltan.map(f => {
+    const responsable = String(f.responsable||'').trim();
+    return {id:genId(), tipo:'gasto', cat:f.cat||'gustos', monto:f.monto, moneda:f.moneda, fecha:f.fechaApp, desc:f.comercio,
+      metodoPago:concil.tarjeta, responsable, saldado:responsable?'no':'', cuotaActual:f.cuotaActual, cuotaTotal:f.cuotaTotal};
+  });
+  state.txs.push(...nuevos);
+  saveState();
+  syncTxs();
+  concil = null;
+  document.getElementById('concil-file').value = '';
+  renderConcilResult();
+  goTo('movimientos', navMov());
+  renderDashboard();
+  renderProyeccion();
+  renderObjs();
+  toast(`${nuevos.length} movimiento${nuevos.length!==1?'s cargados':' cargado'} ✓`);
 }
 
 // OBJECTIVES
@@ -1506,7 +2013,7 @@ function renderObjs() {
     document.getElementById('obj-list').innerHTML='<div class="empty-state"><div class="empty-icon">🎯</div>Todavía no tenés objetivos. ¡Creá el primero!</div>';
     return;
   }
-  const proj = state.proyeccion.length ? computeProjection() : null;
+  const proj = hayProyeccion() ? computeProjection() : null;
   document.getElementById('obj-list').innerHTML = state.objs.map((o)=>{
     const pct = Math.min(o.actual/o.meta*100,100);
     const falta = Math.max(o.meta-o.actual,0);
@@ -1668,8 +2175,14 @@ ${catTend}`;
 }
 
 function buildProjectionContext() {
-  if(!state.proyeccion.length) return 'PROYECCIÓN (próximos 12 meses): la usuaria todavía no cargó ingresos ni gastos proyectados.';
+  if(!hayProyeccion()) return 'PROYECCIÓN (próximos 12 meses): la usuaria todavía no cargó ingresos ni gastos proyectados.';
   const proj = computeProjection();
+  const cuotasMes = proj.months.map(mo => {
+    const cs = mo.items.filter(p=>p.esCuota);
+    if(!cs.length) return null;
+    const porMon = MONEDAS.filter(mon => cs.some(c=>c.moneda===mon)).map(mon => fmtP(cs.filter(c=>c.moneda===mon).reduce((a,c)=>a+c.monto,0), mon));
+    return `  - ${monthLabel(mo.y, mo.m)}: ${porMon.join(' + ')} (${cs.length} cuota${cs.length!==1?'s':''})`;
+  }).filter(Boolean);
   const item = p => {
     const [sy, sm] = String(p.mesInicio).split('-').map(Number);
     const cat = p.tipo==='gasto' && p.categoria ? ` [${(CATS_GASTO.find(c=>c.id===p.categoria)||{name:p.categoria}).name}]` : '';
@@ -1691,6 +2204,8 @@ Ingresos proyectados:
 ${ingresos.length ? ingresos.map(item).join('\n') : '  (ninguno)'}
 Gastos fijos proyectados:
 ${gastos.length ? gastos.map(item).join('\n') : '  (ninguno)'}
+Cuotas de tarjeta pendientes (calculadas de los movimientos, ya incluidas en los gastos de cada mes):
+${cuotasMes.length ? cuotasMes.join('\n') : '  (ninguna)'}
 Totales a 12 meses:
 ${totales}
 Meses con gastos fijos > ${Math.round(PROJ_ALERT*100)}% del ingreso: ${altos.length ? altos.map(mo=>monthLabel(mo.y,mo.m)).join(', ') : 'ninguno'}
