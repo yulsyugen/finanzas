@@ -291,6 +291,10 @@
   .concil-note { font-size: 12px; color: var(--text-muted); margin-top: 10px; line-height: 1.4; }
   .concil-loading { text-align: center; padding: 1.5rem 1rem; color: var(--text-sec); font-size: 14px; }
   .concil-loading .spinner { margin: 0 auto 0.75rem; }
+  .concil-pair-title { font-size: 12px; font-weight: 600; color: var(--text-sec); margin-bottom: 6px; }
+  .concil-top + .concil-top { margin-top: 6px; }
+  .concil-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-sec); margin-top: 10px; cursor: pointer; }
+  .concil-check input { width: 16px; height: 16px; accent-color: var(--blue); }
 
   /* TARJETAS / RESÚMENES */
   .mov-actions { margin-bottom: 0; }
@@ -1348,7 +1352,7 @@ function catBudgetStatus(y, m) {
 function renderCatBars() {
   const status = catBudgetStatus(state.curYear, state.curMonth);
   document.getElementById('cat-bars').innerHTML = status.map(({c, gastado, proj, ratio, level}) => {
-    const pct = Math.min(ratio*100, 100);
+    const pct = Math.max(0, Math.min(ratio*100, 100));
     let alert = '';
     if(level==='warn') alert = `<div class="cat-alert warn">⚠️ ${Math.round(ratio*100)}% consumido · quedan ${fmt(proj-gastado)}</div>`;
     if(level==='over') alert = `<div class="cat-alert over">🔴 ${Math.round(ratio*100)}% · excedido por ${fmt(gastado-proj)}</div>`;
@@ -1600,7 +1604,7 @@ function cuotasTarjetaPendientes() {
   const desde = hoy.getFullYear()*12 + hoy.getMonth();
   const out = [];
   calcResumenes().forEach(r => {
-    if(resPagado(r)) return;
+    if(resPagado(r) || r.total<0) return; // un resumen solo con reintegros no es plata a salir
     const i = Math.max(idxDe(r.fechaVencimiento), desde);
     [...r.cuotas, ...r.aparte.filter(c => esPropio(c.t))].forEach(c => {
       out.push({esCuota:true, tipo:'gasto', y:Math.floor(i/12), m:i%12,
@@ -1965,10 +1969,13 @@ function renderTxList() {
     const icon = catObj ? catObj.icon : (t.tipo==='ingreso'?'➕':'💸');
     const name = catObj ? catObj.name : t.cat;
     const color = catObj && catObj.color ? catObj.color : (t.tipo==='ingreso'?'#1baf7a':'#e34948');
-    const sign = t.tipo==='ingreso' ? '+' : '−';
-    const amtColor = t.tipo==='ingreso' ? '#1baf7a' : 'var(--text)';
+    // Un gasto con monto negativo es un reintegro: resta del gasto de su categoría
+    const reintegro = t.tipo==='gasto' && Number(t.monto)<0;
+    const sign = t.tipo==='ingreso' || reintegro ? '+' : '−';
+    const amtColor = t.tipo==='ingreso' || reintegro ? '#1baf7a' : 'var(--text)';
     const tercero = !esPropio(t);
-    const badge = tercero ? `<span class="tx-badge ${t.saldado==='si'?'saldado':''}">👤 ${esc(t.responsable)}${t.saldado==='si'?' ✓':''}</span>` : '';
+    const badge = (reintegro ? '<span class="tx-badge saldado">Reintegro</span>' : '')
+      + (tercero ? `<span class="tx-badge ${t.saldado==='si'?'saldado':''}">👤 ${esc(t.responsable)}${t.saldado==='si'?' ✓':''}</span>` : '');
     const metodo = metodoDe(t);
     const extra = [
       metodo!=='transferencia' ? (esMetodoTarjeta(metodo)?'💳 ':'')+metodoLabel(metodo) : '',
@@ -1982,7 +1989,7 @@ function renderTxList() {
         <div class="tx-desc">${esc(t.desc||t.fecha)}${extra?' · '+extra:''}</div>
       </div>
       <div class="tx-right">
-        <div class="tx-amount" style="color:${amtColor}">${sign}${fmtU(t.monto,t.moneda)}</div>
+        <div class="tx-amount" style="color:${amtColor}">${sign}${fmtU(Math.abs(t.monto),t.moneda)}</div>
         <div class="tx-date">${t.fecha.slice(5)}</div>
       </div>
       <button class="tx-del" onclick="delTx('${t.id}')">×</button>
@@ -1993,7 +2000,7 @@ function renderTxList() {
 const fechaCorta = f => f ? String(f).slice(0,10).split('-').reverse().slice(0,2).join('/') : '';
 function cuotasTxt(t) {
   const n = Number(t.cantidadCuotas);
-  return n>1 ? `${n} cuotas de ${fmt(dividirCuotas(Number(t.montoTotalCompra||t.monto), n)[0])}` : '1 pago';
+  return n>1 ? `${n} cuotas de ${fmt(dividirCuotas(Number(t.montoTotalCompra||t.monto), n)[0])}` : Number(t.monto)<0 ? 'reintegro' : '1 pago';
 }
 
 // MIS TARJETAS
@@ -2127,9 +2134,9 @@ function resumenCardHtml(r, destacado) {
   const cuotaRow = (c, badge) => `<div class="tx-item">
       <div class="tx-info">
         <div class="tx-cat">${esc(comercioDe(c.t))}${badge}</div>
-        <div class="tx-desc">${fechaCorta(c.t.fecha)} · cuota ${c.n}/${c.de}</div>
+        <div class="tx-desc">${fechaCorta(c.t.fecha)} · ${c.monto<0 ? 'reintegro' : `cuota ${c.n}/${c.de}`}</div>
       </div>
-      <div class="tx-right"><div class="tx-amount">${fmtU(c.monto, c.t.moneda)}</div></div>
+      <div class="tx-right"><div class="tx-amount ${c.monto<0?'c-green':''}">${fmtSigned(c.monto, c.t.moneda)}</div></div>
     </div>`;
   const aparteBadge = c => !esPropio(c.t) ? `<span class="tx-badge">👤 ${esc(c.t.responsable)}</span>` : `<span class="tx-badge">${esc(c.t.moneda)}</span>`;
   const totalAparte = r.aparte.filter(c => c.t.moneda==='ARS').reduce((a,c)=>a+c.monto, 0);
@@ -2329,7 +2336,7 @@ const MONTO_TOLERANCIA = 1;  // $1 por redondeos
 const DIAS_TOLERANCIA = 3;
 let pdfjsPromise = null;
 let concil = null; // {tarjeta, mes, faltan, coinciden, soloApp}
-const concilOpen = {faltan:true, coinciden:false, soloApp:false};
+const concilOpen = {faltan:true, pares:true, coinciden:false, soloApp:false};
 const concilFail = msg => Object.assign(new Error(msg), {userMsg: msg});
 
 function renderConciliar() {
@@ -2381,8 +2388,9 @@ Devolvé EXCLUSIVAMENTE un array JSON, sin ningún texto antes ni después y sin
 [{"fecha":"YYYY-MM-DD","comercio":"...","monto":123.45,"moneda":"ARS","cuotaActual":null,"cuotaTotal":null}]
 
 Reglas:
-- Incluí solo consumos individuales. Ignorá totales, subtotales, impuestos, percepciones, sellos, intereses, cargos financieros, pagos realizados y saldos anteriores.
-- "monto" es un número positivo con punto decimal (por ejemplo "12.345,67" es 12345.67).
+- Incluí consumos individuales y también reintegros, notas de crédito, devoluciones, anulaciones y bonificaciones: NO los ignores.
+- Ignorá totales, subtotales, impuestos, percepciones, sellos, intereses, cargos financieros, pagos realizados y saldos anteriores.
+- "monto" es un número con punto decimal (por ejemplo "12.345,67" es 12345.67): POSITIVO para consumos y NEGATIVO para reintegros, notas de crédito, devoluciones, anulaciones y bonificaciones (por ejemplo -12345.67), aunque en el resumen figuren sin signo o con el signo al final.
 - "moneda" es "ARS" para pesos o "USD" para dólares.
 - Cuando el consumo es una cuota (formatos como "03/06", "3 de 6", "C.03/06", "Cuota 03/06"), completá cuotaActual y cuotaTotal con números (3 y 6). Si es un pago único, dejalos en null.
 - "fecha" es la fecha del consumo tal como figura en el resumen. Si no trae año, deducilo a partir del mes del resumen.
@@ -2409,16 +2417,18 @@ ${texto}`;
   } catch(e) { throw concilFail(CONCIL_ERR_LECTURA); }
   if(!Array.isArray(arr)) throw concilFail(CONCIL_ERR_LECTURA);
   const items = arr.map(r => {
+    const monto = Number(r && r.monto);
     let cuotaActual = parseInt(r && r.cuotaActual)||null, cuotaTotal = parseInt(r && r.cuotaTotal)||null;
-    if(!cuotaActual || !cuotaTotal || cuotaActual>cuotaTotal) { cuotaActual = null; cuotaTotal = null; }
+    // Un reintegro (monto negativo) se trata siempre como pago único
+    if(monto<0 || !cuotaActual || !cuotaTotal || cuotaActual>cuotaTotal) { cuotaActual = null; cuotaTotal = null; }
     return {
       fecha: String((r && r.fecha)||'').slice(0,10),
-      comercio: String((r && r.comercio)||'').trim() || 'Consumo',
-      monto: Number(r && r.monto),
+      comercio: String((r && r.comercio)||'').trim() || (monto<0 ? 'Reintegro' : 'Consumo'),
+      monto,
       moneda: String((r && r.moneda)||'ARS').toUpperCase()==='ARS' ? 'ARS' : 'USDT',
       cuotaActual, cuotaTotal,
     };
-  }).filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.fecha) && r.monto>0);
+  }).filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.fecha) && Number.isFinite(r.monto) && r.monto!==0);
   if(!items.length) throw concilFail(CONCIL_ERR_LECTURA);
   return items;
 }
@@ -2450,7 +2460,8 @@ function compararResumen(items, tarjeta, mes) {
   const candidatos = [...legacy, ...cuotas];
   const dias = (a, b) => Math.abs(Date.parse(a+'T00:00:00') - Date.parse(b+'T00:00:00')) / 86400000;
   const usados = new Set();
-  const faltan = [], coinciden = [];
+  const sinMatch = [], coinciden = [];
+  // 1) Contra la app: el monto se compara con signo, así un reintegro ya cargado (negativo) coincide consigo mismo
   items.forEach(r => {
     const fechaApp = r.cuotaActual>1 && !r.fecha.startsWith(mes) ? fechaEnMes(r.fecha, mes) : r.fecha;
     let best = null;
@@ -2462,11 +2473,33 @@ function compararResumen(items, tarjeta, mes) {
       if(!best || score < best.score) best = {c, score};
     });
     if(best) { usados.add(best.c.key); coinciden.push({r, t:best.c.t}); }
-    else faltan.push({...r, fechaApp, cat:'', responsable:''});
+    else sinMatch.push({...r, fechaApp, cat:'', responsable:''});
+  });
+  // 2) Reintegro + consumo del mismo resumen por el mismo monto absoluto: se anulan entre sí y por defecto
+  //    no se cargan. Desempate: mismo comercio, después la fecha más cercana.
+  const mismoComercio = (a, b) => a.comercio.trim().toLowerCase()===b.comercio.trim().toLowerCase();
+  const pareados = new Set(), pares = [];
+  sinMatch.filter(r => r.monto<0).forEach(re => {
+    let best = null;
+    sinMatch.forEach(co => {
+      if(co.monto<=0 || pareados.has(co) || co.moneda!==re.moneda || Math.abs(co.monto + re.monto) > MONTO_TOLERANCIA) return;
+      const score = dias(co.fecha, re.fecha) + (mismoComercio(co, re) ? 0 : 1000);
+      if(!best || score < best.score) best = {co, score};
+    });
+    if(!best) return;
+    pareados.add(best.co); pareados.add(re);
+    pares.push({consumo:best.co, reintegro:re, incluir:false, cat:'', responsable:''});
+  });
+  // 3) Reintegros sin par: se cargan con monto negativo. Si anulan un consumo que ya está en la app,
+  //    se propone la categoría de ese consumo para que reste de ahí.
+  const faltan = sinMatch.filter(r => !pareados.has(r)).map(r => {
+    if(r.monto>=0) return r;
+    const anulado = coinciden.find(({r:co}) => co.monto>0 && co.moneda===r.moneda && Math.abs(co.monto + r.monto) <= MONTO_TOLERANCIA);
+    return anulado ? {...r, cat:anulado.t.cat} : r;
   });
   const soloApp = candidatos.filter(c => !usados.has(c.key) && (c.legacy ? String(c.fecha).startsWith(mes) : c.idx===mesIdx))
     .map(c => c.vista).sort((a,b)=>a.fecha.localeCompare(b.fecha));
-  return {tarjeta, mes, faltan, coinciden, soloApp};
+  return {tarjeta, mes, faltan, pares, coinciden, soloApp};
 }
 
 async function runConciliacion() {
@@ -2490,7 +2523,7 @@ async function runConciliacion() {
     if(texto.replace(/\s+/g,'').length < 50) throw concilFail(CONCIL_ERR_LECTURA);
     const items = await parseResumenConClaude(texto, mes);
     concil = compararResumen(items, tarjeta, mes);
-    Object.assign(concilOpen, {faltan:true, coinciden:false, soloApp:false});
+    Object.assign(concilOpen, {faltan:true, pares:true, coinciden:false, soloApp:false});
     status.innerHTML = '';
     renderConcilResult();
   } catch(e) {
@@ -2508,7 +2541,7 @@ function toggleConcilBlock(id, el) {
 function renderConcilResult() {
   const el = document.getElementById('concil-result');
   if(!concil) { el.innerHTML = ''; return; }
-  const {faltan, coinciden, soloApp} = concil;
+  const {faltan, pares, coinciden, soloApp} = concil;
   const cuotaTxt = r => r.cuotaTotal ? ` · Cuota ${r.cuotaActual}/${r.cuotaTotal}` : '';
   const catOpts = sel => `<option value="" ${!sel?'selected':''}>Categoría…</option>`
     + CATS_GASTO.map(c=>`<option value="${c.id}" ${c.id===sel?'selected':''}>${c.icon} ${c.name}</option>`).join('');
@@ -2516,50 +2549,65 @@ function renderConcilResult() {
       <div class="concil-head" onclick="toggleConcilBlock('${id}', this)"><span>${titulo}</span><span class="concil-chev">›</span></div>
       <div class="concil-body">${body}</div>
     </div>`;
+  // Fila de un consumo/reintegro del resumen: los reintegros (monto negativo) en verde con etiqueta
+  const filaTop = (titulo, detalle, monto, moneda) => `<div class="concil-top">
+      <div class="tx-info"><div class="tx-cat">${esc(titulo)}${monto<0?'<span class="tx-badge saldado">Reintegro</span>':''}</div><div class="tx-desc">${detalle}</div></div>
+      <div class="tx-amount ${monto<0?'c-green':''}">${fmtSigned(monto, moneda)}</div>
+    </div>`;
+  const ctls = (arr, i, f) => `<div class="concil-ctls">
+      <select class="field-select concil-ctl" onchange="concil.${arr}[${i}].cat=this.value">${catOpts(f.cat)}</select>
+      <input type="text" class="field-input concil-ctl" placeholder="¿De quién? (opcional)" value="${esc(f.responsable)}" oninput="concil.${arr}[${i}].responsable=this.value">
+    </div>`;
 
   const faltanBody = faltan.length ? faltan.map((f, i) => `<div class="concil-item">
-      <div class="concil-top">
-        <div class="tx-info"><div class="tx-cat">${esc(f.comercio)}</div><div class="tx-desc">${fechaCorta(f.fecha)}${cuotaTxt(f)}</div></div>
-        <div class="tx-amount">${fmtU(f.monto, f.moneda)}</div>
-      </div>
-      <div class="concil-ctls">
-        <select class="field-select concil-ctl" onchange="concil.faltan[${i}].cat=this.value">${catOpts(f.cat)}</select>
-        <input type="text" class="field-input concil-ctl" placeholder="¿De quién? (opcional)" value="${esc(f.responsable)}" oninput="concil.faltan[${i}].responsable=this.value">
-      </div>
+      ${filaTop(f.comercio, fechaCorta(f.fecha)+cuotaTxt(f), f.monto, f.moneda)}
+      ${ctls('faltan', i, f)}
     </div>`).join('') : '<div class="tx-desc" style="padding:6px 0">Todo lo del resumen ya está cargado 🎉</div>';
 
+  const paresBody = pares.map((p, i) => `<div class="concil-item">
+      <div class="concil-pair-title">Consumo + reintegro (neto ${fmtSigned(p.consumo.monto + p.reintegro.monto, p.consumo.moneda)})</div>
+      ${filaTop(p.consumo.comercio, fechaCorta(p.consumo.fecha)+cuotaTxt(p.consumo), p.consumo.monto, p.consumo.moneda)}
+      ${filaTop(p.reintegro.comercio, fechaCorta(p.reintegro.fecha), p.reintegro.monto, p.reintegro.moneda)}
+      <label class="concil-check"><input type="checkbox" ${p.incluir?'checked':''} onchange="concil.pares[${i}].incluir=this.checked;renderConcilResult()"> Cargar los dos igual</label>
+      ${p.incluir ? ctls('pares', i, p) : ''}
+    </div>`).join('') + '<div class="concil-note">Se anulan entre sí, así que por defecto no se cargan.</div>';
+
   const coinBody = coinciden.length ? coinciden.map(({r, t}) => `<div class="concil-item concil-muted">
-      <div class="concil-top">
-        <div class="tx-info"><div class="tx-cat">${esc(r.comercio)}</div><div class="tx-desc">${fechaCorta(r.fecha)}${cuotaTxt(r)} · en la app: ${esc(t.desc || catLabel(t.cat))}</div></div>
-        <div class="tx-amount">${fmtU(r.monto, r.moneda)}</div>
-      </div>
+      ${filaTop(r.comercio, `${fechaCorta(r.fecha)}${cuotaTxt(r)} · en la app: ${esc(t.desc || catLabel(t.cat))}`, r.monto, r.moneda)}
     </div>`).join('') : '<div class="tx-desc" style="padding:6px 0">Ninguno</div>';
 
   const soloBody = (soloApp.length ? soloApp.map(t => `<div class="concil-item">
-      <div class="concil-top">
-        <div class="tx-info"><div class="tx-cat">${esc(t.desc || catLabel(t.cat))}</div><div class="tx-desc">${fechaCorta(t.fecha)}${cuotaTxt(t)}</div></div>
-        <div class="tx-amount">${fmtU(t.monto, t.moneda)}</div>
-      </div>
+      ${filaTop(t.desc || catLabel(t.cat), fechaCorta(t.fecha)+cuotaTxt(t), Number(t.monto), t.moneda)}
     </div>`).join('') : '<div class="tx-desc" style="padding:6px 0">Ninguno</div>')
     + '<div class="concil-note">Pueden ser consumos que todavía no cerraron en el resumen, o movimientos cargados por error.</div>';
 
-  const n = faltan.length;
+  const n = faltan.length + 2*pares.filter(p => p.incluir).length;
   el.innerHTML = (n ? `<button class="btn-action" style="margin-bottom:0.875rem" onclick="cargarFaltantes()">Cargar ${n===1?'el movimiento':'los '+n+' movimientos'}</button>` : '')
-    + block('faltan', `Faltan cargar (${n})`, faltanBody, 'accent')
+    + block('faltan', `Faltan cargar (${faltan.length})`, faltanBody, 'accent')
+    + (pares.length ? block('pares', `Consumo + reintegro (${pares.length})`, paresBody) : '')
     + block('coinciden', `Coinciden (${coinciden.length})`, coinBody)
     + block('soloApp', `Están en la app pero no en el resumen (${soloApp.length})`, soloBody);
 }
 
+const fmtSigned = (n, moneda) => (n<0 ? '−' : '') + fmtU(Math.abs(n), moneda);
+
 // Los faltantes se cargan con el modelo nuevo (si no, contarían como salida de caja y otra vez al pagar el resumen).
 // Una cuota k/N se carga como compra de las N−k+1 cuotas que quedan, con fecha dentro de este resumen,
 // para que la primera caiga acá y no queden cuotas viejas como deuda.
+// Un reintegro se carga como compra de 1 pago con monto negativo: resta de su categoría y del total
+// del resumen (y de la deuda), sin tocar el saldo de caja.
 function cargarFaltantes() {
-  if(!concil || !concil.faltan.length) return;
+  if(!concil) return;
   const tj = tarjetaById(concil.tarjeta);
   if(!tj) return;
+  const aCargar = [...concil.faltan];
+  concil.pares.filter(p => p.incluir).forEach(p => {
+    aCargar.push({...p.consumo, cat:p.cat, responsable:p.responsable}, {...p.reintegro, cat:p.cat, responsable:p.responsable});
+  });
+  if(!aCargar.length) return;
   const mesIdx = idxDe(concil.mes);
   const cierre = resumenFechas(tj, mesIdx).fechaCierre;
-  const nuevos = concil.faltan.map(f => {
+  const nuevos = aCargar.map(f => {
     const responsable = String(f.responsable||'').trim();
     const restantes = f.cuotaTotal ? f.cuotaTotal - f.cuotaActual + 1 : 1;
     const total = f.monto * restantes;
