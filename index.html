@@ -539,7 +539,7 @@
     </div>
     <button class="btn-action" id="tj-save" onclick="saveTarjeta()">Agregar tarjeta</button>
     <button class="btn-skip" id="tj-cancel" style="display:none" onclick="resetTarjetaForm()">Cancelar edición</button>
-    <div class="setup-hint">Una compra entra en el resumen que cierra en la primera fecha de cierre igual o posterior a la compra. Si cambiás los días de una tarjeta, se recalculan los resúmenes de las compras ya cargadas.</div>
+    <div class="setup-hint">Los días de cierre y vencimiento son una estimación para los resúmenes que todavía no conciliaste: al conciliar un resumen se usan las fechas reales del PDF para ese período. Si cambiás los días, se recalculan solo los períodos estimados.</div>
   </div>
   <div id="tj-list"></div>
 </div>
@@ -579,15 +579,9 @@
       <label class="field-label">Resumen de la tarjeta (PDF)</label>
       <input type="file" class="field-input" id="concil-file" accept=".pdf">
     </div>
-    <div class="field-row">
-      <div class="field-group">
-        <label class="field-label">Tarjeta</label>
-        <select class="field-select" id="concil-tarjeta"></select>
-      </div>
-      <div class="field-group">
-        <label class="field-label">Mes del resumen</label>
-        <input type="month" class="field-input" id="concil-mes">
-      </div>
+    <div class="field-group">
+      <label class="field-label">Tarjeta</label>
+      <select class="field-select" id="concil-tarjeta"></select>
     </div>
     <button class="btn-action" id="concil-btn" onclick="runConciliacion()">Leer resumen</button>
     <div class="setup-hint">El PDF no se guarda ni se sube a Google Sheets: se lee en memoria y solo el texto se envía a la IA para interpretarlo.</div>
@@ -757,7 +751,7 @@ const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 const SHEET_SCHEMA = {
   transacciones: ['id','tipo','cat','monto','moneda','fecha','desc','metodoPago','responsable','saldado','cuotaActual','cuotaTotal','montoTotalCompra','cantidadCuotas'],
   tarjetas: ['id','nombre','diaCierre','diaVencimiento'],
-  resumenes: ['id','tarjetaId','fechaCierre','fechaVencimiento','totalCalculado','totalAjustado','pagado','fechaPago'],
+  resumenes: ['id','tarjetaId','fechaCierre','fechaVencimiento','totalCalculado','totalAjustado','pagado','fechaPago','cierreAnterior','origen'],
   objetivos: ['id','nombre','meta','actual','mensual','moneda'],
   ingresos: ['mesKey','monto'],
   proyeccion: ['id','tipo','nombre','categoria','monto','moneda','frecuencia','mesInicio'],
@@ -962,7 +956,7 @@ async function loadAllFromSheet() {
     sheetsApi('/values/historial!A2:K?valueRenderOption=UNFORMATTED_VALUE'),
     sheetsApi('/values/proyeccion!A2:H'),
     sheetsApi('/values/tarjetas!A2:D'),
-    sheetsApi('/values/resumenes!A2:H'),
+    sheetsApi('/values/resumenes!A2:J'),
   ]);
   state.txs = (txRes.values||[]).filter(r=>r.length).map(r => ({
     id: r[0]||genId(), tipo: r[1]||'gasto', cat: r[2]||'', monto: parseFloat(r[3])||0,
@@ -977,7 +971,7 @@ async function loadAllFromSheet() {
   state.resumenes = (resRes.values||[]).filter(r=>r.length && r[0]).map(r => ({
     id: r[0], tarjetaId: r[1]||'', fechaCierre: r[2]||'', fechaVencimiento: r[3]||'',
     totalCalculado: parseFloat(r[4])||0, totalAjustado: r[5]===undefined || r[5]==='' ? null : parseFloat(r[5]),
-    pagado: r[6]||'', fechaPago: r[7]||'',
+    pagado: r[6]||'', fechaPago: r[7]||'', cierreAnterior: r[8]||'', origen: r[9]||'',
   }));
   state.objs = (objRes.values||[]).filter(r=>r.length).map(r => ({
     id: r[0]||genId(), nombre: r[1]||'', meta: parseFloat(r[2])||0, actual: parseFloat(r[3])||0,
@@ -1042,8 +1036,8 @@ function syncTarjetas() {
 }
 function syncResumenes() {
   const rows = state.resumenes.map(r => [r.id, r.tarjetaId, r.fechaCierre, r.fechaVencimiento, r.totalCalculado,
-    r.totalAjustado===null ? '' : r.totalAjustado, r.pagado||'', r.fechaPago||'']);
-  overwriteSheetData('resumenes', 8, rows).then(renderDashboard).catch(e=>{ console.error(e); toast('No se pudo sincronizar con Google Sheets'); });
+    r.totalAjustado===null ? '' : r.totalAjustado, r.pagado||'', r.fechaPago||'', r.cierreAnterior||'', r.origen||'']);
+  overwriteSheetData('resumenes', 10, rows).then(renderDashboard).catch(e=>{ console.error(e); toast('No se pudo sincronizar con Google Sheets'); });
 }
 function syncIngresos() {
   const rows = Object.entries(state.ingresosMes).map(([k,v]) => [k, v]);
@@ -1188,24 +1182,49 @@ const idxDe = fecha => { const [y, m] = String(fecha).split('-').map(Number); re
 function hoyIso() { const h = new Date(); return isoDe(h.getFullYear(), h.getMonth(), h.getDate()); }
 const fechaDMY = f => f ? String(f).slice(0,10).split('-').reverse().join('/') : '';
 
-// Índice (año*12+mes) del cierre del resumen en que cae una compra:
-// la primera fecha de cierre >= fecha de compra. Si el mes no tiene el día de cierre, se usa su último día.
+function addDias(fecha, n) {
+  const [y, m, d] = String(fecha).split('-').map(Number);
+  const dt = new Date(y, m-1, d+n);
+  return isoDe(dt.getFullYear(), dt.getMonth(), dt.getDate());
+}
+
+// Los cierres reales varían mes a mes: salen del PDF al conciliar y se guardan en "resumenes" con origen "pdf".
+// diaCierre/diaVencimiento de la tarjeta son solo una estimación para los períodos sin PDF.
+const resumenPdf = (tjId, idx) => state.resumenes.find(r => r.tarjetaId===tjId && r.origen==='pdf' && idxDe(r.fechaCierre)===idx);
+
+// Índice (año*12+mes) del cierre del resumen en que cae una compra: la primera fecha de cierre >= fecha de compra.
+// Se parte del cierre estimado y se corrige con las fechas reales de los períodos vecinos, si las hay.
 function idxResumenDe(tj, fecha) {
   const [y, m, d] = String(fecha).split('-').map(Number);
   if(!y || !m || !d) return null;
-  return y*12 + (m-1) + (d <= diaEnMes(y, m-1, tj.diaCierre) ? 0 : 1);
+  const est = y*12 + (m-1) + (d <= diaEnMes(y, m-1, tj.diaCierre) ? 0 : 1);
+  if(!state.resumenes.some(r => r.tarjetaId===tj.id && r.origen==='pdf')) return est;
+  const f = isoDe(y, m-1, d);
+  for(let idx = est-1; idx <= est; idx++) if(resumenFechas(tj, idx).fechaCierre >= f) return idx;
+  return est+1;
 }
 
-// Fechas de cierre y vencimiento del resumen de la tarjeta cuyo cierre cae en el mes idx.
-// El vencimiento es la primera ocurrencia del día de vencimiento estrictamente posterior al cierre.
+// Vencimiento estimado: primera ocurrencia del día de vencimiento estrictamente posterior al cierre
+function estimarVto(tj, fechaCierre) {
+  const [y, m1, d] = String(fechaCierre).split('-').map(Number);
+  const m = m1-1;
+  const v = diaEnMes(y, m, tj.diaVencimiento);
+  if(v > d) return isoDe(y, m, v);
+  const y2 = m===11 ? y+1 : y, m2 = (m+1)%12;
+  return isoDe(y2, m2, diaEnMes(y2, m2, tj.diaVencimiento));
+}
+
+// Fechas del resumen cuyo cierre cae en el mes idx: las reales del PDF si se concilió ese período;
+// si no, el cierre anterior informado por el PDF del período siguiente; si no, la estimación con diaCierre
+// (si el mes no tiene ese día, se usa su último día).
 function resumenFechas(tj, idx) {
+  const real = resumenPdf(tj.id, idx);
+  if(real) return {fechaCierre:real.fechaCierre, fechaVencimiento:real.fechaVencimiento || estimarVto(tj, real.fechaCierre),
+    cierreEstimado:false, vtoEstimado:!real.fechaVencimiento};
+  const sig = resumenPdf(tj.id, idx+1);
   const y = Math.floor(idx/12), m = idx%12;
-  const cierre = diaEnMes(y, m, tj.diaCierre);
-  const vtoMismoMes = diaEnMes(y, m, tj.diaVencimiento);
-  let vto;
-  if(vtoMismoMes > cierre) vto = isoDe(y, m, vtoMismoMes);
-  else { const y2 = Math.floor((idx+1)/12), m2 = (idx+1)%12; vto = isoDe(y2, m2, diaEnMes(y2, m2, tj.diaVencimiento)); }
-  return {fechaCierre: isoDe(y, m, cierre), fechaVencimiento: vto};
+  const fechaCierre = sig && sig.cierreAnterior ? sig.cierreAnterior : isoDe(y, m, diaEnMes(y, m, tj.diaCierre));
+  return {fechaCierre, fechaVencimiento:estimarVto(tj, fechaCierre), cierreEstimado:!(sig && sig.cierreAnterior), vtoEstimado:true};
 }
 
 // Divide el total en n cuotas redondeadas; la última absorbe la diferencia para que la suma dé exacto
@@ -1880,8 +1899,8 @@ function updateCardHint() {
   const idx = tj && fecha ? idxResumenDe(tj, fecha) : null;
   if(idx===null) { el.textContent = ''; el.style.display = 'none'; return; }
   const n = parseInt(document.getElementById('tx-cuotas').value) || 1;
-  const {fechaVencimiento} = resumenFechas(tj, idx);
-  el.textContent = `${n>1 ? 'Primera cuota en el' : 'Entra en el'} resumen que vence el ${fechaCorta(fechaVencimiento)}. No afecta tu saldo de hoy.`;
+  const {fechaVencimiento, vtoEstimado} = resumenFechas(tj, idx);
+  el.textContent = `${n>1 ? 'Primera cuota en el' : 'Entra en el'} resumen que vence el ${fechaCorta(fechaVencimiento)}${vtoEstimado?' (estimado)':''}. No afecta tu saldo de hoy.`;
   el.style.display = 'block';
 }
 
@@ -2148,7 +2167,7 @@ function resumenCardHtml(r, destacado) {
     <div class="res-top">
       <div>
         <div class="reint-name">💳 ${esc(r.tj.nombre)}</div>
-        <div class="reint-sub">Vence el ${fechaDMY(r.fechaVencimiento)} · ${abierto?'cierra':'cerró'} el ${fechaCorta(r.fechaCierre)}</div>
+        <div class="reint-sub">Vence el ${fechaDMY(r.fechaVencimiento)}${r.vtoEstimado?' (estimado)':''} · ${abierto?'cierra':'cerró'} el ${fechaCorta(r.fechaCierre)}${r.cierreEstimado?' (estimado)':''}</div>
       </div>
       <div><div class="res-total">${fmt(r.total)}</div><div class="metric-sub" style="text-align:right">calculado</div></div>
     </div>
@@ -2179,9 +2198,9 @@ function ensureResumenRec(r) {
   return r.rec;
 }
 
-// Un registro sin ajuste y sin pago no aporta nada: se borra para no ensuciar la hoja
+// Un registro sin ajuste, sin pago y sin fechas reales no aporta nada: se borra para no ensuciar la hoja
 function limpiarResumenRec(rec) {
-  if(rec.pagado!=='si' && rec.totalAjustado===null) state.resumenes = state.resumenes.filter(x => x!==rec);
+  if(rec.pagado!=='si' && rec.totalAjustado===null && rec.origen!=='pdf') state.resumenes = state.resumenes.filter(x => x!==rec);
 }
 
 function setTotalAjustado(key, val) {
@@ -2340,8 +2359,6 @@ const concilOpen = {faltan:true, pares:true, coinciden:false, soloApp:false};
 const concilFail = msg => Object.assign(new Error(msg), {userMsg: msg});
 
 function renderConciliar() {
-  const mes = document.getElementById('concil-mes');
-  if(!mes.value) { const h=new Date(); mes.value = ymKey(h.getFullYear(), h.getMonth()); }
   const sel = document.getElementById('concil-tarjeta');
   const prev = sel.value;
   sel.innerHTML = state.tarjetas.map(tj => `<option value="${esc(tj.id)}">${esc(tj.nombre)}</option>`).join('')
@@ -2380,21 +2397,24 @@ async function extractPdfText(file) {
   return pages.join('\n');
 }
 
-async function parseResumenConClaude(texto, mes) {
-  const [y, m] = mes.split('-').map(Number);
-  const prompt = `Este es el texto extraído de un resumen de tarjeta de crédito argentino, correspondiente a ${MONTHS_ES[m-1]} ${y}.
+async function parseResumenConClaude(texto) {
+  const prompt = `Este es el texto extraído de un resumen de tarjeta de crédito argentino.
 
-Devolvé EXCLUSIVAMENTE un array JSON, sin ningún texto antes ni después y sin bloques de código, con esta forma:
-[{"fecha":"YYYY-MM-DD","comercio":"...","monto":123.45,"moneda":"ARS","cuotaActual":null,"cuotaTotal":null}]
+Devolvé EXCLUSIVAMENTE un objeto JSON, sin ningún texto antes ni después y sin bloques de código, con esta forma:
+{"cierre":"YYYY-MM-DD","cierreAnterior":"YYYY-MM-DD","vencimiento":"YYYY-MM-DD","consumos":[{"fecha":"YYYY-MM-DD","comercio":"...","monto":123.45,"moneda":"ARS","cuotaActual":null,"cuotaTotal":null}]}
 
-Reglas:
+Fechas del período:
+- "cierre" es la fecha de cierre de ESTE resumen, "cierreAnterior" la fecha de cierre del resumen anterior y "vencimiento" la fecha de vencimiento de este resumen.
+- Si alguna de esas fechas no figura en el resumen, devolvela como null. No la inventes ni la calcules.
+
+Reglas para "consumos":
 - Incluí consumos individuales y también reintegros, notas de crédito, devoluciones, anulaciones y bonificaciones: NO los ignores.
 - Ignorá totales, subtotales, impuestos, percepciones, sellos, intereses, cargos financieros, pagos realizados y saldos anteriores.
 - "monto" es un número con punto decimal (por ejemplo "12.345,67" es 12345.67): POSITIVO para consumos y NEGATIVO para reintegros, notas de crédito, devoluciones, anulaciones y bonificaciones (por ejemplo -12345.67), aunque en el resumen figuren sin signo o con el signo al final.
 - "moneda" es "ARS" para pesos o "USD" para dólares.
 - Cuando el consumo es una cuota (formatos como "03/06", "3 de 6", "C.03/06", "Cuota 03/06"), completá cuotaActual y cuotaTotal con números (3 y 6). Si es un pago único, dejalos en null.
-- "fecha" es la fecha del consumo tal como figura en el resumen. Si no trae año, deducilo a partir del mes del resumen.
-- Si no encontrás ningún consumo, devolvé [].
+- "fecha" es la fecha del consumo tal como figura en el resumen. Si no trae año, deducilo a partir de las fechas de cierre del resumen.
+- Si no encontrás ningún consumo, devolvé "consumos": [].
 
 TEXTO DEL RESUMEN:
 ${texto}`;
@@ -2411,12 +2431,13 @@ ${texto}`;
   const data = await res.json();
   if(data.error){throw new Error(data.error.message);}
   const raw = (data.content||[]).map(c=>c.text||'').join('').trim();
-  let arr;
+  let obj;
   try {
-    arr = JSON.parse(raw.slice(raw.indexOf('['), raw.lastIndexOf(']')+1));
+    obj = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}')+1));
   } catch(e) { throw concilFail(CONCIL_ERR_LECTURA); }
-  if(!Array.isArray(arr)) throw concilFail(CONCIL_ERR_LECTURA);
-  const items = arr.map(r => {
+  if(!obj || !Array.isArray(obj.consumos)) throw concilFail(CONCIL_ERR_LECTURA);
+  const fechaOk = f => /^\d{4}-\d{2}-\d{2}$/.test(String(f||'').slice(0,10)) ? String(f).slice(0,10) : null;
+  const items = obj.consumos.map(r => {
     const monto = Number(r && r.monto);
     let cuotaActual = parseInt(r && r.cuotaActual)||null, cuotaTotal = parseInt(r && r.cuotaTotal)||null;
     // Un reintegro (monto negativo) se trata siempre como pago único
@@ -2430,7 +2451,7 @@ ${texto}`;
     };
   }).filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.fecha) && Number.isFinite(r.monto) && r.monto!==0);
   if(!items.length) throw concilFail(CONCIL_ERR_LECTURA);
-  return items;
+  return {items, cierre:fechaOk(obj.cierre), cierreAnterior:fechaOk(obj.cierreAnterior), vencimiento:fechaOk(obj.vencimiento)};
 }
 
 // Las cuotas 2 en adelante figuran en el resumen con la fecha de la compra original:
@@ -2442,20 +2463,24 @@ function fechaEnMes(fecha, mes) {
 }
 
 // Coincidencia = mismo monto (±$1) y fecha a 3 días o menos. Nunca por nombre de comercio.
-// Se buscan coincidencias en todos los gastos de esa tarjeta (un consumo del 29 del mes
-// anterior puede venir en este resumen), pero el bloque "en la app pero no en el resumen"
-// muestra solo los del mes elegido.
+// El período real del resumen va del día siguiente a cierreAnterior hasta cierre (inclusive). Se cruza contra
+// las transacciones de la tarjeta con fecha en ese rango ±3 días, pero "en la app pero no en el resumen"
+// muestra solo las del rango exacto.
 // Las compras del modelo nuevo se comparan cuota por cuota: cada cuota tiene el monto de la cuota y la
-// fecha de la compra original (como figura en el resumen). Se aceptan cuotas de resúmenes vecinos por si
-// el día de cierre configurado no coincide exacto con el del banco, priorizando las del mes elegido.
-function compararResumen(items, tarjeta, mes) {
-  const mesIdx = idxDe(mes);
-  const legacy = state.txs.filter(t => t.tipo==='gasto' && metodoDe(t)===tarjeta && !esCompraTarjeta(t))
+// fecha de la compra original (como figura en el resumen). Las cuotas 2 en adelante tienen la fecha de la
+// compra fuera del rango: para esas cuenta el resumen en que caen (o uno vecino), priorizando este.
+function compararResumen(items, tarjeta, periodo) {
+  const mesIdx = idxDe(periodo.cierre);
+  const mes = periodo.cierre.slice(0,7);
+  const desde = addDias(periodo.cierreAnterior, 1), hasta = periodo.cierre;
+  const enRango = (f, margen) => f >= addDias(desde, -margen) && f <= addDias(hasta, margen);
+  const legacy = state.txs.filter(t => t.tipo==='gasto' && metodoDe(t)===tarjeta && !esCompraTarjeta(t)
+      && (enRango(t.fecha, DIAS_TOLERANCIA) || (t.cuotaTotal && String(t.fecha).startsWith(mes))))
     .map(t => ({key:t.id, t, monto:Number(t.monto), moneda:t.moneda, fecha:t.fecha, legacy:true,
       vista:{desc:t.desc, cat:t.cat, fecha:t.fecha, monto:t.monto, moneda:t.moneda, cuotaActual:t.cuotaActual, cuotaTotal:t.cuotaTotal}}));
   const cuotas = state.txs.filter(t => esCompraTarjeta(t) && t.metodoPago===tarjeta).flatMap(cuotasDeCompra)
-    .filter(c => Math.abs(c.idx - mesIdx) <= 1)
-    .map(c => ({key:c.t.id+'#'+c.n, t:c.t, monto:c.monto, moneda:c.t.moneda, fecha:c.t.fecha, idx:c.idx,
+    .filter(c => c.n===1 ? enRango(c.t.fecha, DIAS_TOLERANCIA) : Math.abs(c.idx - mesIdx) <= 1)
+    .map(c => ({key:c.t.id+'#'+c.n, t:c.t, monto:c.monto, moneda:c.t.moneda, fecha:c.t.fecha, idx:c.idx, cuota1:c.n===1,
       vista:{desc:c.t.desc, cat:c.t.cat, fecha:c.t.fecha, monto:c.monto, moneda:c.t.moneda, cuotaActual:c.n, cuotaTotal:c.de}}));
   const candidatos = [...legacy, ...cuotas];
   const dias = (a, b) => Math.abs(Date.parse(a+'T00:00:00') - Date.parse(b+'T00:00:00')) / 86400000;
@@ -2497,40 +2522,106 @@ function compararResumen(items, tarjeta, mes) {
     const anulado = coinciden.find(({r:co}) => co.monto>0 && co.moneda===r.moneda && Math.abs(co.monto + r.monto) <= MONTO_TOLERANCIA);
     return anulado ? {...r, cat:anulado.t.cat} : r;
   });
-  const soloApp = candidatos.filter(c => !usados.has(c.key) && (c.legacy ? String(c.fecha).startsWith(mes) : c.idx===mesIdx))
+  // Rango exacto: las compras de 1 cuota y legacy por fecha; las cuotas 2+ si caen en este resumen
+  const soloApp = candidatos.filter(c => !usados.has(c.key) && (c.legacy || c.cuota1 ? enRango(c.fecha, 0) : c.idx===mesIdx))
     .map(c => c.vista).sort((a,b)=>a.fecha.localeCompare(b.fecha));
-  return {tarjeta, mes, faltan, pares, coinciden, soloApp};
+  return {tarjeta, periodo, idx:mesIdx, faltan, pares, coinciden, soloApp};
 }
 
 async function runConciliacion() {
   const file = document.getElementById('concil-file').files[0];
   const tarjeta = document.getElementById('concil-tarjeta').value;
-  const mes = document.getElementById('concil-mes').value;
   if(!tarjetaById(tarjeta)){toast('Primero configurá tu tarjeta');goTo('tarjetas', navMov());return;}
   if(!file){toast('Elegí el PDF del resumen');return;}
   if(!/\.pdf$/i.test(file.name)){toast('El archivo tiene que ser un PDF');return;}
-  if(!/^\d{4}-\d{2}$/.test(mes)){toast('Elegí el mes del resumen');return;}
   if(!state.apiKey){toast('Configurá tu API key primero');promptApiKey();if(!state.apiKey)return;}
 
   const btn = document.getElementById('concil-btn');
   const status = document.getElementById('concil-status');
   btn.disabled = true;
   concil = null;
+  concilPend = null;
   renderConcilResult();
   status.innerHTML = '<div class="card concil-loading"><div class="spinner"></div>Leyendo el resumen...</div>';
   try {
     const texto = await extractPdfText(file);
     if(texto.replace(/\s+/g,'').length < 50) throw concilFail(CONCIL_ERR_LECTURA);
-    const items = await parseResumenConClaude(texto, mes);
-    concil = compararResumen(items, tarjeta, mes);
-    Object.assign(concilOpen, {faltan:true, pares:true, coinciden:false, soloApp:false});
-    status.innerHTML = '';
-    renderConcilResult();
+    concilPend = {tarjeta, ...await parseResumenConClaude(texto)};
+    if(concilPend.cierre && concilPend.cierreAnterior && concilPend.vencimiento) compararConFechas();
+    else renderConcilFechas();
   } catch(e) {
     console.error(e);
     status.innerHTML = `<div class="alert-banner over">${esc(e.userMsg || 'Error al conectar con la IA. Verificá tu API key.')}</div>`;
   }
   btn.disabled = false;
+}
+
+// Resumen ya leído al que le falta alguna fecha del período: se completa a mano antes de comparar
+let concilPend = null; // {tarjeta, items, cierre, cierreAnterior, vencimiento}
+
+function renderConcilFechas(error) {
+  const p = concilPend;
+  const tj = tarjetaById(p.tarjeta);
+  const campo = (id, label, valor, sugerido) => `<div class="field-group">
+      <label class="field-label">${label}${valor ? '' : ' — no figura en el resumen'}</label>
+      <input type="date" class="field-input" id="${id}" value="${valor || sugerido || ''}">
+    </div>`;
+  document.getElementById('concil-status').innerHTML = `<div class="card">
+      <div class="card-title">Completá las fechas del resumen</div>
+      ${error ? `<div class="alert-banner over">${esc(error)}</div>` : ''}
+      <div class="field-row">
+        ${campo('concil-cierre-ant', 'Cierre anterior', p.cierreAnterior)}
+        ${campo('concil-cierre', 'Cierre', p.cierre)}
+      </div>
+      ${p.vencimiento ? '' : campo('concil-vto', 'Vencimiento', null, p.cierre && tj ? estimarVto(tj, p.cierre) : '')}
+      <button class="btn-action" onclick="confirmarFechasConcil()">Comparar</button>
+      <div class="setup-hint">El período del resumen va del día siguiente al cierre anterior hasta el cierre, inclusive.</div>
+    </div>`;
+}
+
+function confirmarFechasConcil() {
+  if(!concilPend) return;
+  const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  concilPend.cierreAnterior = val('concil-cierre-ant') || null;
+  concilPend.cierre = val('concil-cierre') || null;
+  if(!concilPend.vencimiento) concilPend.vencimiento = val('concil-vto') || null;
+  compararConFechas();
+}
+
+function compararConFechas() {
+  const p = concilPend;
+  const status = document.getElementById('concil-status');
+  let error = '';
+  if(!p.cierre || !p.cierreAnterior || !p.vencimiento) error = 'Completá las tres fechas.';
+  else if(p.cierreAnterior >= p.cierre) error = 'El cierre anterior tiene que ser antes del cierre.';
+  else if(p.vencimiento <= p.cierre) error = 'El vencimiento tiene que ser después del cierre.';
+  else if(addDias(p.cierreAnterior, 62) < p.cierre) error = 'El período es demasiado largo: revisá las fechas.';
+  if(error) { renderConcilFechas(error); return; }
+  // Primero se guardan las fechas reales: así la asignación de compras a resúmenes ya usa este período
+  guardarFechasResumen(tarjetaById(p.tarjeta), p);
+  concil = compararResumen(p.items, p.tarjeta, {cierre:p.cierre, cierreAnterior:p.cierreAnterior, vencimiento:p.vencimiento});
+  concilPend = null;
+  Object.assign(concilOpen, {faltan:true, pares:true, coinciden:false, soloApp:false});
+  status.innerHTML = '';
+  renderConcilResult();
+}
+
+// Crea o actualiza la fila de "resumenes" del período (tarjeta + mes de cierre) con las fechas reales del PDF.
+// Conserva el ajuste y el pago si ya existían.
+function guardarFechasResumen(tj, p) {
+  const idx = idxDe(p.cierre);
+  let rec = state.resumenes.find(r => r.tarjetaId===tj.id && idxDe(r.fechaCierre)===idx);
+  if(!rec) {
+    rec = {id:genId(), tarjetaId:tj.id, totalCalculado:0, totalAjustado:null, pagado:'', fechaPago:''};
+    state.resumenes.push(rec);
+  }
+  Object.assign(rec, {fechaCierre:p.cierre, fechaVencimiento:p.vencimiento, cierreAnterior:p.cierreAnterior, origen:'pdf'});
+  const r = calcResumenes().find(x => x.rec===rec);
+  rec.totalCalculado = r ? r.total : 0;
+  saveState();
+  syncResumenes();
+  renderDashboard();
+  renderProyeccion();
 }
 
 function toggleConcilBlock(id, el) {
@@ -2582,7 +2673,13 @@ function renderConcilResult() {
     + '<div class="concil-note">Pueden ser consumos que todavía no cerraron en el resumen, o movimientos cargados por error.</div>';
 
   const n = faltan.length + 2*pares.filter(p => p.incluir).length;
-  el.innerHTML = (n ? `<button class="btn-action" style="margin-bottom:0.875rem" onclick="cargarFaltantes()">Cargar ${n===1?'el movimiento':'los '+n+' movimientos'}</button>` : '')
+  const per = concil.periodo;
+  el.innerHTML = `<div class="card">
+      <div class="card-title" style="margin-bottom:6px">Período del resumen</div>
+      <div class="tx-cat">${fechaCorta(addDias(per.cierreAnterior, 1))} al ${fechaCorta(per.cierre)} · vence el ${fechaDMY(per.vencimiento)}</div>
+      <div class="concil-note" style="margin-top:4px">Fechas guardadas en Resúmenes para este período.</div>
+    </div>`
+    + (n ? `<button class="btn-action" style="margin-bottom:0.875rem" onclick="cargarFaltantes()">Cargar ${n===1?'el movimiento':'los '+n+' movimientos'}</button>` : '')
     + block('faltan', `Faltan cargar (${faltan.length})`, faltanBody, 'accent')
     + (pares.length ? block('pares', `Consumo + reintegro (${pares.length})`, paresBody) : '')
     + block('coinciden', `Coinciden (${coinciden.length})`, coinBody)
@@ -2605,8 +2702,8 @@ function cargarFaltantes() {
     aCargar.push({...p.consumo, cat:p.cat, responsable:p.responsable}, {...p.reintegro, cat:p.cat, responsable:p.responsable});
   });
   if(!aCargar.length) return;
-  const mesIdx = idxDe(concil.mes);
-  const cierre = resumenFechas(tj, mesIdx).fechaCierre;
+  const mesIdx = concil.idx;
+  const cierre = concil.periodo.cierre;
   const nuevos = aCargar.map(f => {
     const responsable = String(f.responsable||'').trim();
     const restantes = f.cuotaTotal ? f.cuotaTotal - f.cuotaActual + 1 : 1;
