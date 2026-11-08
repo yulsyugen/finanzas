@@ -724,6 +724,7 @@ const CATS_GASTO = [
   {id:'casa',       name:'Casa',          pct:0.05, color:'#4a3aa7', icon:'🏡'},
   {id:'mama',       name:'Mamá',          pct:0.10, color:'#1a9aa8', icon:'👩'},
   {id:'self-care',  name:'Self-Care / Salud', pct:0.05, color:'#eb6834', icon:'✨'},
+  {id:'otros',      name:'Otros',         pct:0,    color:'#8a8a82', icon:'📦'}, // sin presupuesto: el resto ya suma 100%
 ];
 const CATS_INGRESO = [
   {id:'sueldo', name:'Sueldo', icon:'💼'},
@@ -1358,7 +1359,7 @@ function renderCatBars() {
         <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${pct}%;background:${level==='over'?'var(--red)':c.color}"></div></div>
         <div class="cat-right">
           <div class="cat-amounts ${level==='over'?'cat-over':''}">${fmt(gastado)}</div>
-          <div class="cat-pct">${proj>0?fmt(proj):Math.round(c.pct*100)+'%'}</div>
+          <div class="cat-pct">${proj>0?fmt(proj):c.pct?Math.round(c.pct*100)+'%':'sin presupuesto'}</div>
         </div>
       </div>
       ${alert}
@@ -1674,7 +1675,8 @@ function projObjReach(o, proj) {
 
 function renderProyeccion() {
   const catSel = document.getElementById('proj-cat');
-  if(!catSel.options.length) catSel.innerHTML = CATS_GASTO.map(c=>`<option value="${c.id}">${c.icon} ${c.name}</option>`).join('')
+  // "otros" no se lista: en proyección ya existe "📦 Otros" con texto libre
+  if(!catSel.options.length) catSel.innerHTML = CATS_GASTO.filter(c=>c.id!=='otros').map(c=>`<option value="${c.id}">${c.icon} ${c.name}</option>`).join('')
     + `<option value="${PROJ_CAT_OTROS}">📦 Otros</option>`;
   const inicio = document.getElementById('proj-inicio');
   if(!inicio.value) { const h=new Date(); inicio.value = ymKey(h.getFullYear(), h.getMonth()); }
