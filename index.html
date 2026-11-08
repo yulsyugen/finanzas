@@ -291,6 +291,25 @@
   .concil-note { font-size: 12px; color: var(--text-muted); margin-top: 10px; line-height: 1.4; }
   .concil-loading { text-align: center; padding: 1.5rem 1rem; color: var(--text-sec); font-size: 14px; }
   .concil-loading .spinner { margin: 0 auto 0.75rem; }
+
+  /* TARJETAS / RESÚMENES */
+  .mov-actions { margin-bottom: 0; }
+  .btn-mini.neutral { background: var(--surface2); color: var(--text-sec); }
+  .tc-hint { font-size: 12px; color: var(--text-muted); line-height: 1.4; margin: -2px 0 10px; }
+  .tc-aviso { background: var(--amber-bg); border: 1px solid var(--amber); color: var(--amber); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 13px; line-height: 1.5; margin-bottom: 10px; }
+  .tc-aviso button { background: var(--amber); color: #fff; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; margin-top: 8px; display: block; }
+  .tj-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+  .res-card.accent { border: 1.5px solid var(--blue); }
+  .res-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .res-total { font-size: 20px; font-weight: 700; text-align: right; }
+  .res-diff { font-size: 12px; color: var(--amber); margin: -4px 0 10px; }
+  .res-toggle { display: flex; justify-content: space-between; align-items: center; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-sec); padding: 8px 0; border-top: 1px solid var(--border); }
+  .res-chev { color: var(--text-muted); font-size: 12px; transition: transform .15s; }
+  .res-card.open .res-chev, .res-paid.open .res-chev { transform: rotate(90deg); }
+  .res-detail { display: none; margin-bottom: 8px; }
+  .res-card.open .res-detail, .res-paid.open .res-detail { display: block; }
+  .res-sub { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin: 10px 0 2px; }
+  .metric.link { cursor: pointer; }
 </style>
 </head>
 <body>
@@ -368,7 +387,7 @@
   </div>
 
   <div class="card balance-hero">
-    <div class="balance-label">Balance del mes</div>
+    <div class="balance-label">Saldo disponible</div>
     <div class="balance-value" id="balance-value">$0</div>
     <div class="balance-sub" id="balance-sub"></div>
   </div>
@@ -417,6 +436,8 @@
   <div class="page-title" style="margin-bottom:1.25rem">Movimientos</div>
 
   <div class="mov-actions">
+    <button class="btn-secondary" onclick="goTo('tarjetas', navMov())">💳 Mis tarjetas</button>
+    <button class="btn-secondary" onclick="goTo('resumenes', navMov())">📆 Resúmenes</button>
     <button class="btn-secondary" onclick="goTo('reintegros', navMov())">🤝 Reintegros</button>
     <button class="btn-secondary" onclick="goTo('conciliar', navMov())">🧾 Conciliar resumen</button>
   </div>
@@ -434,20 +455,31 @@
       <label class="field-label">Método de pago</label>
       <select class="field-select" id="tx-metodo" onchange="toggleCardFields()"></select>
     </div>
+    <div id="tx-card-aviso" class="tc-aviso" style="display:none">
+      Todavía no configuraste ninguna tarjeta. Cargala con su día de cierre y vencimiento para saber en qué resumen cae cada compra.
+      <button onclick="goTo('tarjetas', navMov())">Configurar tarjeta</button>
+    </div>
     <div id="tx-card-fields" style="display:none">
       <div class="field-group">
         <label class="field-label">¿De quién es este gasto?</label>
         <input type="text" class="field-input" id="tx-responsable" placeholder="opcional — vacío = propio">
       </div>
       <div class="field-group">
-        <label class="field-label">Cuotas (opcional — vacío = pago único)</label>
-        <div class="cuota-row">
-          Cuota <input type="number" class="field-input cuota-input" id="tx-cuota-act" inputmode="numeric" min="1">
-          de <input type="number" class="field-input cuota-input" id="tx-cuota-tot" inputmode="numeric" min="1">
+        <label class="field-label">Cantidad de cuotas</label>
+        <input type="number" class="field-input" id="tx-cuotas" inputmode="numeric" min="1" value="1" oninput="onCuotaInput()">
+      </div>
+      <div class="field-row">
+        <div class="field-group">
+          <label class="field-label">Monto total</label>
+          <input type="number" class="field-input" id="tx-total" placeholder="0" inputmode="decimal" oninput="onCuotaInput('total')">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Monto por cuota</label>
+          <input type="number" class="field-input" id="tx-por-cuota" placeholder="0" inputmode="decimal" oninput="onCuotaInput('cuota')">
         </div>
       </div>
     </div>
-    <div class="field-row">
+    <div class="field-row" id="tx-monto-row">
       <div class="field-group">
         <label class="field-label">Monto</label>
         <input type="number" class="field-input" id="tx-monto" placeholder="0" inputmode="decimal">
@@ -463,17 +495,60 @@
     <div class="field-row">
       <div class="field-group">
         <label class="field-label">Fecha</label>
-        <input type="date" class="field-input" id="tx-fecha">
+        <input type="date" class="field-input" id="tx-fecha" oninput="updateCardHint()">
       </div>
       <div class="field-group">
         <label class="field-label">Descripción</label>
         <input type="text" class="field-input" id="tx-desc" placeholder="opcional">
       </div>
     </div>
+    <div class="tc-hint" id="tx-card-hint"></div>
     <button class="btn-action" onclick="addTx()">Registrar</button>
   </div>
 
   <div id="tx-list"></div>
+</div>
+
+<!-- MIS TARJETAS -->
+<div id="page-tarjetas" class="page">
+  <div class="page-header">
+    <div style="display:flex;align-items:center;gap:10px">
+      <button class="btn-back" onclick="goTo('movimientos', navMov())" aria-label="Volver">‹</button>
+      <div class="page-title">Mis tarjetas</div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title" id="tj-form-title">Nueva tarjeta</div>
+    <div class="field-group">
+      <label class="field-label">Nombre</label>
+      <input type="text" class="field-input" id="tj-nombre" placeholder="ej: Visa Galicia">
+    </div>
+    <div class="field-row">
+      <div class="field-group">
+        <label class="field-label">Día de cierre</label>
+        <input type="number" class="field-input" id="tj-cierre" placeholder="1-31" inputmode="numeric" min="1" max="31">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Día de vencimiento</label>
+        <input type="number" class="field-input" id="tj-vto" placeholder="1-31" inputmode="numeric" min="1" max="31">
+      </div>
+    </div>
+    <button class="btn-action" id="tj-save" onclick="saveTarjeta()">Agregar tarjeta</button>
+    <button class="btn-skip" id="tj-cancel" style="display:none" onclick="resetTarjetaForm()">Cancelar edición</button>
+    <div class="setup-hint">Una compra entra en el resumen que cierra en la primera fecha de cierre igual o posterior a la compra. Si cambiás los días de una tarjeta, se recalculan los resúmenes de las compras ya cargadas.</div>
+  </div>
+  <div id="tj-list"></div>
+</div>
+
+<!-- RESÚMENES -->
+<div id="page-resumenes" class="page">
+  <div class="page-header">
+    <div style="display:flex;align-items:center;gap:10px">
+      <button class="btn-back" onclick="goTo('movimientos', navMov())" aria-label="Volver">‹</button>
+      <div class="page-title">Resúmenes</div>
+    </div>
+  </div>
+  <div id="res-list"></div>
 </div>
 
 <!-- REINTEGROS -->
@@ -659,11 +734,15 @@ const METODOS_PAGO = [
   {id:'transferencia',     name:'Transferencia',     icon:'🏦'},
   {id:'efectivo',          name:'Efectivo',          icon:'💵'},
   {id:'debito-automatico', name:'Débito automático', icon:'🔁'},
-  {id:'visa',              name:'Visa',              icon:'💳'},
-  {id:'master',            name:'Mastercard',        icon:'💳'},
-  {id:'mercado-credito',   name:'Mercado Crédito',   icon:'💳'},
 ];
-const CARD_METODOS = ['visa','master','mercado-credito'];
+// Tarjetas hardcodeadas de versiones anteriores: solo para mostrar movimientos viejos.
+// Las tarjetas nuevas salen de la hoja "tarjetas" (state.tarjetas).
+const TARJETAS_LEGACY = [
+  {id:'visa',            name:'Visa'},
+  {id:'master',          name:'Mastercard'},
+  {id:'mercado-credito', name:'Mercado Crédito'},
+];
+const SIN_TARJETA = '__sin-tarjeta'; // opción del select cuando no hay tarjetas configuradas
 const MONTHS_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
 // GOOGLE OAUTH + SHEETS
@@ -671,7 +750,9 @@ const GOOGLE_CLIENT_ID = '424767622838-069e27ifl3celr4q92bh9vmtu7k0t91g.apps.goo
 const SHEET_ID = '1ApXsc7TNusVWOg_cHYDR4V_GrLpQVik1CyLJK8RLbIg';
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 const SHEET_SCHEMA = {
-  transacciones: ['id','tipo','cat','monto','moneda','fecha','desc','metodoPago','responsable','saldado','cuotaActual','cuotaTotal'],
+  transacciones: ['id','tipo','cat','monto','moneda','fecha','desc','metodoPago','responsable','saldado','cuotaActual','cuotaTotal','montoTotalCompra','cantidadCuotas'],
+  tarjetas: ['id','nombre','diaCierre','diaVencimiento'],
+  resumenes: ['id','tarjetaId','fechaCierre','fechaVencimiento','totalCalculado','totalAjustado','pagado','fechaPago'],
   objetivos: ['id','nombre','meta','actual','mensual','moneda'],
   ingresos: ['mesKey','monto'],
   proyeccion: ['id','tipo','nombre','categoria','monto','moneda','frecuencia','mesInicio'],
@@ -692,6 +773,8 @@ let state = {
   ingresosMes: {},
   historial: [],
   proyeccion: [],
+  tarjetas: [],
+  resumenes: [],
   curYear: new Date().getFullYear(),
   curMonth: new Date().getMonth(),
   chatHistory: [],
@@ -867,18 +950,29 @@ async function ensureSheetStructure() {
 }
 
 async function loadAllFromSheet() {
-  const [txRes, objRes, ingRes, histRes, projRes] = await Promise.all([
-    sheetsApi('/values/transacciones!A2:L'),
+  const [txRes, objRes, ingRes, histRes, projRes, tjRes, resRes] = await Promise.all([
+    sheetsApi('/values/transacciones!A2:N'),
     sheetsApi('/values/objetivos!A2:F'),
     sheetsApi('/values/ingresos!A2:B'),
     sheetsApi('/values/historial!A2:K?valueRenderOption=UNFORMATTED_VALUE'),
     sheetsApi('/values/proyeccion!A2:H'),
+    sheetsApi('/values/tarjetas!A2:D'),
+    sheetsApi('/values/resumenes!A2:H'),
   ]);
   state.txs = (txRes.values||[]).filter(r=>r.length).map(r => ({
     id: r[0]||genId(), tipo: r[1]||'gasto', cat: r[2]||'', monto: parseFloat(r[3])||0,
     moneda: r[4]||'ARS', fecha: r[5]||'', desc: r[6]||'',
     metodoPago: r[7]||'', responsable: r[8]||'', saldado: r[9]||'',
     cuotaActual: parseInt(r[10])||null, cuotaTotal: parseInt(r[11])||null,
+    montoTotalCompra: parseFloat(r[12])||null, cantidadCuotas: parseInt(r[13])||null,
+  }));
+  state.tarjetas = (tjRes.values||[]).filter(r=>r.length && r[0]).map(r => ({
+    id: r[0], nombre: r[1]||'Tarjeta', diaCierre: parseInt(r[2])||1, diaVencimiento: parseInt(r[3])||1,
+  }));
+  state.resumenes = (resRes.values||[]).filter(r=>r.length && r[0]).map(r => ({
+    id: r[0], tarjetaId: r[1]||'', fechaCierre: r[2]||'', fechaVencimiento: r[3]||'',
+    totalCalculado: parseFloat(r[4])||0, totalAjustado: r[5]===undefined || r[5]==='' ? null : parseFloat(r[5]),
+    pagado: r[6]||'', fechaPago: r[7]||'',
   }));
   state.objs = (objRes.values||[]).filter(r=>r.length).map(r => ({
     id: r[0]||genId(), nombre: r[1]||'', meta: parseFloat(r[2])||0, actual: parseFloat(r[3])||0,
@@ -925,8 +1019,9 @@ async function overwriteSheetData(sheetName, numCols, rows) {
 
 function syncTxs() {
   const rows = state.txs.map(t => [t.id, t.tipo, t.cat, t.monto, t.moneda, t.fecha, t.desc||'',
-    t.metodoPago||'', t.responsable||'', t.saldado||'', t.cuotaActual||'', t.cuotaTotal||'']);
-  overwriteSheetData('transacciones', 12, rows).then(renderDashboard).catch(e=>{ console.error(e); toast('No se pudo sincronizar con Google Sheets'); });
+    t.metodoPago||'', t.responsable||'', t.saldado||'', t.cuotaActual||'', t.cuotaTotal||'',
+    t.montoTotalCompra||'', t.cantidadCuotas||'']);
+  overwriteSheetData('transacciones', 14, rows).then(renderDashboard).catch(e=>{ console.error(e); toast('No se pudo sincronizar con Google Sheets'); });
 }
 function syncObjs() {
   const rows = state.objs.map(o => [o.id, o.nombre, o.meta, o.actual, o.mensual, o.moneda]);
@@ -935,6 +1030,15 @@ function syncObjs() {
 function syncProyeccion() {
   const rows = state.proyeccion.map(p => [p.id, p.tipo, p.nombre, p.categoria||'', p.monto, p.moneda, p.frecuencia, p.mesInicio]);
   overwriteSheetData('proyeccion', 8, rows).then(renderDashboard).catch(e=>{ console.error(e); toast('No se pudo sincronizar con Google Sheets'); });
+}
+function syncTarjetas() {
+  const rows = state.tarjetas.map(tj => [tj.id, tj.nombre, tj.diaCierre, tj.diaVencimiento]);
+  overwriteSheetData('tarjetas', 4, rows).catch(e=>{ console.error(e); toast('No se pudo sincronizar con Google Sheets'); });
+}
+function syncResumenes() {
+  const rows = state.resumenes.map(r => [r.id, r.tarjetaId, r.fechaCierre, r.fechaVencimiento, r.totalCalculado,
+    r.totalAjustado===null ? '' : r.totalAjustado, r.pagado||'', r.fechaPago||'']);
+  overwriteSheetData('resumenes', 8, rows).then(renderDashboard).catch(e=>{ console.error(e); toast('No se pudo sincronizar con Google Sheets'); });
 }
 function syncIngresos() {
   const rows = Object.entries(state.ingresosMes).map(([k,v]) => [k, v]);
@@ -980,8 +1084,7 @@ function promptApiKey() {
 function initApp() {
   const today = new Date().toISOString().split('T')[0];
   document.getElementById('tx-fecha').value = today;
-  document.getElementById('tx-metodo').innerHTML = METODOS_PAGO.map(mp=>`<option value="${mp.id}">${mp.icon} ${mp.name}</option>`).join('');
-  document.getElementById('concil-tarjeta').innerHTML = METODOS_PAGO.filter(mp=>CARD_METODOS.includes(mp.id)).map(mp=>`<option value="${mp.id}">${mp.name}</option>`).join('');
+  renderMetodoSelect();
   populateCatSelect();
   renderAll();
 }
@@ -1022,6 +1125,8 @@ function goTo(pg, btn) {
   if(pg==='proyeccion') renderProyeccion();
   if(pg==='reintegros') renderReintegros();
   if(pg==='conciliar') renderConciliar();
+  if(pg==='tarjetas') renderTarjetas();
+  if(pg==='resumenes') renderResumenes();
   document.getElementById('main').scrollTop = 0;
 }
 
@@ -1050,7 +1155,111 @@ function renderDashboard() {
 const esPropio = t => !String(t.responsable||'').trim();
 // Transacciones viejas sin método de pago se tratan como transferencia
 const metodoDe = t => t.metodoPago || 'transferencia';
-const metodoLabel = id => (METODOS_PAGO.find(mp=>mp.id===id)||METODOS_PAGO[0]).name;
+const tarjetaById = id => state.tarjetas.find(tj => tj.id===id);
+const esMetodoTarjeta = id => !!tarjetaById(id) || TARJETAS_LEGACY.some(l => l.id===id);
+function metodoLabel(id) {
+  const base = METODOS_PAGO.find(mp=>mp.id===id);
+  if(base) return base.name;
+  const tj = tarjetaById(id);
+  if(tj) return tj.nombre;
+  const leg = TARJETAS_LEGACY.find(l=>l.id===id);
+  return leg ? leg.name : METODOS_PAGO[0].name;
+}
+
+// ═══ TARJETAS: devengado vs caja ═══
+// Compra con tarjeta del modelo nuevo (cantidadCuotas cargado): es GASTO el día de la compra
+// (categorías, "Gastado este mes") pero NO sale de caja hasta que se paga el resumen.
+// Las transacciones legacy (sin cantidadCuotas) siguen contando como gasto de caja en su fecha.
+const esCompraTarjeta = t => t.tipo==='gasto' && Number(t.cantidadCuotas) > 0;
+// Pago de resumen: SÍ resta de caja, NUNCA suma a categorías (el gasto ya se contó al comprar).
+// En t.cat se guarda el id del resumen pagado (este tipo no tiene categoría).
+const esPagoTarjeta = t => t.tipo==='pago-tarjeta';
+
+const pad2 = n => String(n).padStart(2,'0');
+const diasEnMes = (y, m) => new Date(y, m+1, 0).getDate(); // m 0-based
+const diaEnMes = (y, m, dia) => Math.min(Number(dia), diasEnMes(y, m));
+const isoDe = (y, m, d) => `${y}-${pad2(m+1)}-${pad2(d)}`;
+const idxDe = fecha => { const [y, m] = String(fecha).split('-').map(Number); return y&&m ? y*12+m-1 : null; };
+function hoyIso() { const h = new Date(); return isoDe(h.getFullYear(), h.getMonth(), h.getDate()); }
+const fechaDMY = f => f ? String(f).slice(0,10).split('-').reverse().join('/') : '';
+
+// Índice (año*12+mes) del cierre del resumen en que cae una compra:
+// la primera fecha de cierre >= fecha de compra. Si el mes no tiene el día de cierre, se usa su último día.
+function idxResumenDe(tj, fecha) {
+  const [y, m, d] = String(fecha).split('-').map(Number);
+  if(!y || !m || !d) return null;
+  return y*12 + (m-1) + (d <= diaEnMes(y, m-1, tj.diaCierre) ? 0 : 1);
+}
+
+// Fechas de cierre y vencimiento del resumen de la tarjeta cuyo cierre cae en el mes idx.
+// El vencimiento es la primera ocurrencia del día de vencimiento estrictamente posterior al cierre.
+function resumenFechas(tj, idx) {
+  const y = Math.floor(idx/12), m = idx%12;
+  const cierre = diaEnMes(y, m, tj.diaCierre);
+  const vtoMismoMes = diaEnMes(y, m, tj.diaVencimiento);
+  let vto;
+  if(vtoMismoMes > cierre) vto = isoDe(y, m, vtoMismoMes);
+  else { const y2 = Math.floor((idx+1)/12), m2 = (idx+1)%12; vto = isoDe(y2, m2, diaEnMes(y2, m2, tj.diaVencimiento)); }
+  return {fechaCierre: isoDe(y, m, cierre), fechaVencimiento: vto};
+}
+
+// Divide el total en n cuotas redondeadas; la última absorbe la diferencia para que la suma dé exacto
+function dividirCuotas(total, n) {
+  const base = Math.round(total / n);
+  return Array.from({length:n}, (_, i) => i < n-1 ? base : total - base*(n-1));
+}
+
+const comercioDe = t => t.desc || (CATS_GASTO.find(c=>c.id===t.cat)||{name:'Compra con tarjeta'}).name;
+
+// Calendario de cuotas de una compra del modelo nuevo. Se deriva en cada render, nunca se guarda.
+// La cuota N cae en el resumen N-1 meses después del de la cuota 1.
+function cuotasDeCompra(t) {
+  const tj = tarjetaById(t.metodoPago);
+  const n = Number(t.cantidadCuotas);
+  if(!tj || !n) return [];
+  const idx0 = idxResumenDe(tj, t.fecha);
+  if(idx0===null) return [];
+  return dividirCuotas(Number(t.montoTotalCompra || t.monto), n).map((monto, i) => ({t, tj, n:i+1, de:n, monto, idx:idx0+i}));
+}
+
+// Todos los resúmenes: los derivados de las compras + los guardados en la hoja (ajustados o pagados).
+// Se identifican por tarjeta + mes de cierre, así un cambio en el día de cierre no desengancha los pagos.
+// total = cuotas propias en ARS; las de terceros (o en otra moneda) van en "aparte" y no suman.
+function calcResumenes() {
+  const map = new Map();
+  const get = (tj, idx) => {
+    const key = `${tj.id}|${idx}`;
+    if(!map.has(key)) map.set(key, {key, tj, idx, ...resumenFechas(tj, idx), cuotas:[], aparte:[], total:0, rec:null});
+    return map.get(key);
+  };
+  state.txs.forEach(t => {
+    if(!esCompraTarjeta(t)) return;
+    cuotasDeCompra(t).forEach(c => {
+      const r = get(c.tj, c.idx);
+      if(esPropio(t) && t.moneda==='ARS') { r.cuotas.push(c); r.total += c.monto; }
+      else r.aparte.push(c);
+    });
+  });
+  state.resumenes.forEach(rec => {
+    const tj = tarjetaById(rec.tarjetaId), idx = idxDe(rec.fechaCierre);
+    if(tj && idx!==null) get(tj, idx).rec = rec;
+  });
+  return [...map.values()];
+}
+const resPagado = r => !!(r.rec && r.rec.pagado==='si');
+const resAjustado = r => !!(r.rec && r.rec.totalAjustado!==null && r.rec.totalAjustado!==undefined);
+const resAPagar = r => resAjustado(r) ? Number(r.rec.totalAjustado) : r.total;
+
+// Deuda = todas las cuotas propias de resúmenes no pagados. Próximo vencimiento = el impago más cercano
+// (sumando todas las tarjetas que vencen ese mismo día).
+function deudaTarjetas(resumenes) {
+  const pend = (resumenes || calcResumenes()).filter(r => !resPagado(r) && r.total>0);
+  const total = pend.reduce((a, r) => a + r.total, 0);
+  if(!pend.length) return {total, prox:null};
+  const fecha = pend.reduce((min, r) => r.fechaVencimiento < min ? r.fechaVencimiento : min, pend[0].fechaVencimiento);
+  const monto = pend.filter(r => r.fechaVencimiento===fecha).reduce((a, r) => a + resAPagar(r), 0);
+  return {total, prox:{fecha, monto}};
+}
 
 function txsForMonth(y, m) {
   return state.txs.filter(t => {
@@ -1070,8 +1279,11 @@ function renderMetrics() {
   const ingresoReg = ingresoTxs(state.curYear, state.curMonth);
   const ingreso = ingresoManualVal + ingresoReg;
   const nIngresos = txs.filter(t=>t.tipo==='ingreso'&&t.moneda==='ARS').length;
-  const gastos = txs.filter(t=>t.tipo==='gasto'&&t.moneda==='ARS').reduce((a,t)=>a+Number(t.monto),0);
-  const balance = ingreso - gastos;
+  const cajaMes = cajaDelMes(state.curYear, state.curMonth);
+  const gastos = cajaMes.gastado;
+  const balance = cajaMes.saldo;
+  const comprasTarjeta = cajaMes.gastado - cajaMes.gastosCaja;
+  const deuda = deudaTarjetas();
   const ahorro = txs.filter(t=>t.tipo==='gasto'&&t.cat==='ahorro'&&t.moneda==='ARS').reduce((a,t)=>a+Number(t.monto),0);
   const ahorroUsdt = txs.filter(t=>t.tipo==='gasto'&&t.cat==='ahorro'&&t.moneda==='USDT').reduce((a,t)=>a+Number(t.monto),0);
   const ahorroProj = ingreso * 0.10;
@@ -1086,14 +1298,32 @@ function renderMetrics() {
   const bv = document.getElementById('balance-value');
   bv.textContent = fmt(balance);
   bv.className = 'balance-value ' + (balance>=0 ? 'c-green' : 'c-red');
-  document.getElementById('balance-sub').textContent = `${fmt(ingreso)} de ingresos − ${fmt(gastos)} de gastos`;
+  document.getElementById('balance-sub').textContent = `${fmt(ingreso)} de ingresos − ${fmt(cajaMes.gastosCaja)} de gastos`
+    + (cajaMes.pagos>0 ? ` − ${fmt(cajaMes.pagos)} de tarjetas` : '');
 
+  const gastSub = [ingreso>0 ? Math.round(gastos/ingreso*100)+'% del ingreso' : '', comprasTarjeta>0 ? `${fmt(comprasTarjeta)} con tarjeta` : '']
+    .filter(Boolean).join(' · ') || '—';
+  const deudaSub = deuda.prox ? `Próximo vencimiento: ${fmt(deuda.prox.monto)} el ${fechaCorta(deuda.prox.fecha)}` : 'sin cuotas pendientes';
   document.getElementById('metrics').innerHTML = `
+    <div class="metric"><div class="metric-label">Gastado este mes</div><div class="metric-value c-red">${fmt(gastos)}</div><div class="metric-sub">${gastSub}</div></div>
+    <div class="metric link" onclick="goTo('resumenes', navMov())"><div class="metric-label">Deuda en tarjetas</div><div class="metric-value">${fmt(deuda.total)}</div><div class="metric-sub">${deudaSub}</div></div>
     <div class="metric"><div class="metric-label">Ingresos</div><div class="metric-value c-green">${fmt(ingreso)}</div><div class="metric-sub">${ingSub}</div></div>
-    <div class="metric"><div class="metric-label">Gastos</div><div class="metric-value c-red">${fmt(gastos)}</div><div class="metric-sub">${ingreso>0?Math.round(gastos/ingreso*100)+'% del ingreso':'—'}</div></div>
     <div class="metric"><div class="metric-label">Ahorro real</div><div class="metric-value c-blue">${fmt(ahorro)}</div><div class="metric-sub">${ahorroSub}</div></div>
-    <div class="metric"><div class="metric-label">Transacciones</div><div class="metric-value c-blue">${txs.length}</div><div class="metric-sub">este mes</div></div>
   `;
+}
+
+// Caja del mes (ARS, solo propio):
+// - gastado: todos los gastos, incluidas las compras con tarjeta en su fecha (criterio devengado)
+// - gastosCaja: gastos que salieron de caja ese día (todo menos compras con tarjeta del modelo nuevo)
+// - pagos: pagos de resumen registrados en el mes
+// - saldo = ingresos − gastosCaja − pagos
+function cajaDelMes(y, m) {
+  const txs = txsForMonth(y, m).filter(t => t.moneda==='ARS');
+  const sum = arr => arr.reduce((a,t)=>a+Number(t.monto),0);
+  const gastado = sum(txs.filter(t=>t.tipo==='gasto'));
+  const gastosCaja = sum(txs.filter(t=>t.tipo==='gasto' && !esCompraTarjeta(t)));
+  const pagos = sum(txs.filter(esPagoTarjeta));
+  return {gastado, gastosCaja, pagos, saldo: ingresoTotal(y, m) - gastosCaja - pagos};
 }
 
 // Estado de cada categoría vs su presupuesto (ingreso del mes × % de la categoría).
@@ -1359,6 +1589,29 @@ function projAppliesTo(p, y, m) {
 // de la misma compra (misma tarjeta, moneda, monto, total de cuotas y mes de la cuota 1)
 // se usa la más reciente, para no proyectar dos veces las mismas cuotas.
 function cuotasPendientes() {
+  return [...cuotasLegacyPendientes(), ...cuotasTarjetaPendientes()];
+}
+
+// Modelo nuevo: cada cuota de un resumen sin pagar se ubica en el mes de VENCIMIENTO de ese resumen.
+// Si el vencimiento ya pasó y sigue impago, se ubica en el mes actual (es plata que todavía tiene que salir).
+function cuotasTarjetaPendientes() {
+  const hoy = new Date();
+  const desde = hoy.getFullYear()*12 + hoy.getMonth();
+  const out = [];
+  calcResumenes().forEach(r => {
+    if(resPagado(r)) return;
+    const i = Math.max(idxDe(r.fechaVencimiento), desde);
+    [...r.cuotas, ...r.aparte.filter(c => esPropio(c.t))].forEach(c => {
+      out.push({esCuota:true, tipo:'gasto', y:Math.floor(i/12), m:i%12,
+        nombre:`Cuota ${c.n}/${c.de} — ${comercioDe(c.t)} (${r.tj.nombre}, vto ${fechaCorta(r.fechaVencimiento)})`,
+        categoria:c.t.cat, monto:c.monto, moneda:c.t.moneda});
+    });
+  });
+  return out;
+}
+
+// Legacy (cuotaActual/cuotaTotal, sin cantidadCuotas): mismo cálculo que antes, por fecha de la cuota + N meses
+function cuotasLegacyPendientes() {
   const hoy = new Date();
   const desde = hoy.getFullYear()*12 + hoy.getMonth();
   const series = new Map();
@@ -1574,10 +1827,56 @@ function setTipo(tipo) {
   toggleCardFields();
 }
 
-// Responsable y cuotas solo aplican a gastos con tarjeta de crédito
+// Transferencia, efectivo, débito automático + las tarjetas configuradas en la hoja "tarjetas"
+function renderMetodoSelect() {
+  const sel = document.getElementById('tx-metodo');
+  const prev = sel.value;
+  const tarjetas = state.tarjetas.length
+    ? state.tarjetas.map(tj => `<option value="${esc(tj.id)}">💳 ${esc(tj.nombre)}</option>`).join('')
+    : `<option value="${SIN_TARJETA}">💳 Tarjeta de crédito</option>`;
+  sel.innerHTML = METODOS_PAGO.map(mp=>`<option value="${mp.id}">${mp.icon} ${mp.name}</option>`).join('') + tarjetas;
+  if([...sel.options].some(o => o.value===prev)) sel.value = prev;
+  toggleCardFields();
+}
+
+// Responsable, cuotas y montos vinculados solo aplican a gastos con tarjeta de crédito
 function toggleCardFields() {
-  const card = txTipo==='gasto' && CARD_METODOS.includes(document.getElementById('tx-metodo').value);
+  const metodo = document.getElementById('tx-metodo').value;
+  const gasto = txTipo==='gasto';
+  const card = gasto && !!tarjetaById(metodo);
+  document.getElementById('tx-card-aviso').style.display = gasto && metodo===SIN_TARJETA ? 'block' : 'none';
   document.getElementById('tx-card-fields').style.display = card ? 'block' : 'none';
+  document.getElementById('tx-monto-row').style.display = card ? 'none' : 'grid';
+  updateCardHint();
+}
+
+// "Monto total" y "Monto por cuota" se calculan entre sí según cuál completó el usuario
+let cuotaCampo = 'total';
+function onCuotaInput(campo) {
+  if(campo) cuotaCampo = campo;
+  const n = Math.max(1, parseInt(document.getElementById('tx-cuotas').value) || 1);
+  const totalEl = document.getElementById('tx-total');
+  const cuotaEl = document.getElementById('tx-por-cuota');
+  if(cuotaCampo==='total') {
+    const tot = parseFloat(totalEl.value);
+    cuotaEl.value = tot>0 ? Math.round(tot/n) : '';
+  } else {
+    const c = parseFloat(cuotaEl.value);
+    totalEl.value = c>0 ? c*n : '';
+  }
+  updateCardHint();
+}
+
+function updateCardHint() {
+  const el = document.getElementById('tx-card-hint');
+  const tj = txTipo==='gasto' ? tarjetaById(document.getElementById('tx-metodo').value) : null;
+  const fecha = document.getElementById('tx-fecha').value;
+  const idx = tj && fecha ? idxResumenDe(tj, fecha) : null;
+  if(idx===null) { el.textContent = ''; el.style.display = 'none'; return; }
+  const n = parseInt(document.getElementById('tx-cuotas').value) || 1;
+  const {fechaVencimiento} = resumenFechas(tj, idx);
+  el.textContent = `${n>1 ? 'Primera cuota en el' : 'Entra en el'} resumen que vence el ${fechaCorta(fechaVencimiento)}. No afecta tu saldo de hoy.`;
+  el.style.display = 'block';
 }
 
 function populateCatSelect() {
@@ -1587,44 +1886,57 @@ function populateCatSelect() {
 
 // TRANSACTIONS
 function addTx() {
-  const monto = parseFloat(document.getElementById('tx-monto').value);
-  if(!monto||monto<=0){toast('Ingresá un monto válido');return;}
+  const metodoPago = document.getElementById('tx-metodo').value || 'transferencia';
+  if(txTipo==='gasto' && metodoPago===SIN_TARJETA){toast('Primero configurá tu tarjeta');return;}
+  const esTarjeta = txTipo==='gasto' && !!tarjetaById(metodoPago);
   const cat = document.getElementById('tx-cat').value;
-  const moneda = document.getElementById('tx-moneda').value;
   const fecha = document.getElementById('tx-fecha').value;
   const desc = document.getElementById('tx-desc').value.trim();
-  if(!fecha){toast('Seleccioná una fecha');return;}
-  const metodoPago = document.getElementById('tx-metodo').value || 'transferencia';
-  const esTarjeta = txTipo==='gasto' && CARD_METODOS.includes(metodoPago);
-  const responsable = esTarjeta ? document.getElementById('tx-responsable').value.trim() : '';
-  const cAct = esTarjeta ? parseInt(document.getElementById('tx-cuota-act').value) : NaN;
-  const cTot = esTarjeta ? parseInt(document.getElementById('tx-cuota-tot').value) : NaN;
-  let cuotaActual = null, cuotaTotal = null;
-  if(cAct || cTot) {
-    if(!(cAct>=1 && cTot>=1 && cAct<=cTot)){toast('Revisá las cuotas (ej: cuota 3 de 6)');return;}
-    cuotaActual = cAct; cuotaTotal = cTot;
+  let monto, moneda, cantidadCuotas = null;
+  if(esTarjeta) {
+    // Una sola transacción con el total; el calendario de cuotas se deriva al renderizar
+    cantidadCuotas = parseInt(document.getElementById('tx-cuotas').value);
+    if(!(cantidadCuotas>=1 && cantidadCuotas<=72)){toast('Revisá la cantidad de cuotas');return;}
+    monto = parseFloat(document.getElementById('tx-total').value);
+    moneda = 'ARS';
+  } else {
+    monto = parseFloat(document.getElementById('tx-monto').value);
+    moneda = document.getElementById('tx-moneda').value;
   }
-  state.txs.push({id:genId(),tipo:txTipo,cat,monto,moneda,fecha,desc,metodoPago,responsable,saldado:responsable?'no':'',cuotaActual,cuotaTotal});
+  if(!monto||monto<=0){toast('Ingresá un monto válido');return;}
+  if(!fecha){toast('Seleccioná una fecha');return;}
+  const responsable = esTarjeta ? document.getElementById('tx-responsable').value.trim() : '';
+  state.txs.push({id:genId(),tipo:txTipo,cat,monto,moneda,fecha,desc,metodoPago,responsable,saldado:responsable?'no':'',
+    cuotaActual:null,cuotaTotal:null,montoTotalCompra:esTarjeta?monto:null,cantidadCuotas});
   document.getElementById('tx-monto').value='';
   document.getElementById('tx-desc').value='';
   document.getElementById('tx-responsable').value='';
-  document.getElementById('tx-cuota-act').value='';
-  document.getElementById('tx-cuota-tot').value='';
+  document.getElementById('tx-cuotas').value='1';
+  document.getElementById('tx-total').value='';
+  document.getElementById('tx-por-cuota').value='';
+  cuotaCampo = 'total';
+  updateCardHint();
   saveState();
   syncTxs();
   renderTxList();
   renderDashboard();
-  if(cuotaTotal) renderProyeccion();
-  toast('Movimiento registrado ✓');
+  if(esTarjeta) renderProyeccion();
+  toast(esTarjeta ? 'Compra registrada ✓ — no afecta tu saldo de hoy' : 'Movimiento registrado ✓');
 }
 
 function delTx(id) {
-  if(!confirm('¿Eliminar este movimiento?'))return;
+  const t = state.txs.find(t => t.id===id);
+  if(!t) return;
+  if(esPagoTarjeta(t)) {
+    if(!confirm('¿Eliminar este pago? El resumen vuelve a quedar pendiente.')) return;
+    despagarResumen(t.cat);
+  } else if(!confirm('¿Eliminar este movimiento?')) return;
   state.txs = state.txs.filter(t => t.id !== id);
   saveState();
   syncTxs();
   renderTxList();
   renderDashboard();
+  if(esCompraTarjeta(t) || esPagoTarjeta(t)) renderProyeccion();
 }
 
 function renderTxList() {
@@ -1635,6 +1947,18 @@ function renderTxList() {
   }
   const allCats = [...CATS_GASTO,...CATS_INGRESO];
   document.getElementById('tx-list').innerHTML = '<div class="card">'+sorted.map(t=>{
+    if(esPagoTarjeta(t)) return `<div class="tx-item">
+      <div class="tx-dot" style="background:var(--blue-bg)">💳</div>
+      <div class="tx-info">
+        <div class="tx-cat">${esc(t.desc||'Pago resumen')}</div>
+        <div class="tx-desc">Pago de tarjeta · no suma a categorías</div>
+      </div>
+      <div class="tx-right">
+        <div class="tx-amount">−${fmtU(t.monto,t.moneda)}</div>
+        <div class="tx-date">${t.fecha.slice(5)}</div>
+      </div>
+      <button class="tx-del" onclick="delTx('${t.id}')">×</button>
+    </div>`;
     const catObj = allCats.find(c=>c.id===t.cat);
     const icon = catObj ? catObj.icon : (t.tipo==='ingreso'?'➕':'💸');
     const name = catObj ? catObj.name : t.cat;
@@ -1645,8 +1969,9 @@ function renderTxList() {
     const badge = tercero ? `<span class="tx-badge ${t.saldado==='si'?'saldado':''}">👤 ${esc(t.responsable)}${t.saldado==='si'?' ✓':''}</span>` : '';
     const metodo = metodoDe(t);
     const extra = [
-      metodo!=='transferencia' ? (CARD_METODOS.includes(metodo)?'💳 ':'')+metodoLabel(metodo) : '',
+      metodo!=='transferencia' ? (esMetodoTarjeta(metodo)?'💳 ':'')+metodoLabel(metodo) : '',
       t.cuotaTotal ? `cuota ${t.cuotaActual}/${t.cuotaTotal}` : '',
+      esCompraTarjeta(t) ? cuotasTxt(t) : '',
     ].filter(Boolean).join(' · ');
     return `<div class="tx-item ${tercero?'tercero':''}">
       <div class="tx-dot" style="background:${color}22">${icon}</div>
@@ -1664,6 +1989,248 @@ function renderTxList() {
 }
 
 const fechaCorta = f => f ? String(f).slice(0,10).split('-').reverse().slice(0,2).join('/') : '';
+function cuotasTxt(t) {
+  const n = Number(t.cantidadCuotas);
+  return n>1 ? `${n} cuotas de ${fmt(dividirCuotas(Number(t.montoTotalCompra||t.monto), n)[0])}` : '1 pago';
+}
+
+// MIS TARJETAS
+let editingTarjeta = null;
+
+function renderTarjetas() {
+  const el = document.getElementById('tj-list');
+  if(!state.tarjetas.length) {
+    el.innerHTML = '<div class="card"><div class="empty-state"><div class="empty-icon">💳</div>Todavía no cargaste ninguna tarjeta</div></div>';
+    return;
+  }
+  el.innerHTML = '<div class="card">' + state.tarjetas.map(tj => `<div class="tx-item">
+      <div class="tx-dot" style="background:var(--blue-bg)">💳</div>
+      <div class="tx-info">
+        <div class="tx-cat">${esc(tj.nombre)}</div>
+        <div class="tx-desc">Cierra el ${tj.diaCierre} · vence el ${tj.diaVencimiento}</div>
+      </div>
+      <div class="tj-actions">
+        <button class="btn-mini neutral" onclick="editTarjeta('${esc(tj.id)}')">Editar</button>
+        <button class="tx-del" onclick="delTarjeta('${esc(tj.id)}')" aria-label="Eliminar">×</button>
+      </div>
+    </div>`).join('') + '</div>';
+}
+
+function resetTarjetaForm() {
+  editingTarjeta = null;
+  ['tj-nombre','tj-cierre','tj-vto'].forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('tj-form-title').textContent = 'Nueva tarjeta';
+  document.getElementById('tj-save').textContent = 'Agregar tarjeta';
+  document.getElementById('tj-cancel').style.display = 'none';
+}
+
+function editTarjeta(id) {
+  const tj = tarjetaById(id);
+  if(!tj) return;
+  editingTarjeta = id;
+  document.getElementById('tj-nombre').value = tj.nombre;
+  document.getElementById('tj-cierre').value = tj.diaCierre;
+  document.getElementById('tj-vto').value = tj.diaVencimiento;
+  document.getElementById('tj-form-title').textContent = 'Editar tarjeta';
+  document.getElementById('tj-save').textContent = 'Guardar cambios';
+  document.getElementById('tj-cancel').style.display = 'block';
+  document.getElementById('main').scrollTop = 0;
+}
+
+function saveTarjeta() {
+  const nombre = document.getElementById('tj-nombre').value.trim();
+  const diaCierre = Number(document.getElementById('tj-cierre').value);
+  const diaVencimiento = Number(document.getElementById('tj-vto').value);
+  const diaOk = d => Number.isInteger(d) && d>=1 && d<=31;
+  if(!nombre){toast('Poné un nombre');return;}
+  if(!diaOk(diaCierre) || !diaOk(diaVencimiento)){toast('Los días tienen que ser de 1 a 31');return;}
+  const tj = editingTarjeta && tarjetaById(editingTarjeta);
+  if(tj) Object.assign(tj, {nombre, diaCierre, diaVencimiento});
+  else state.tarjetas.push({id:genId(), nombre, diaCierre, diaVencimiento});
+  resetTarjetaForm();
+  afterTarjetasChange();
+  toast(tj ? 'Tarjeta actualizada ✓' : 'Tarjeta agregada ✓');
+}
+
+function delTarjeta(id) {
+  const tj = tarjetaById(id);
+  if(!tj) return;
+  if(state.txs.some(t => t.metodoPago===id) || state.resumenes.some(r => r.tarjetaId===id)) {
+    toast('Esta tarjeta tiene movimientos cargados: editala en vez de eliminarla');
+    return;
+  }
+  if(!confirm(`¿Eliminar ${tj.nombre}?`)) return;
+  state.tarjetas = state.tarjetas.filter(t => t.id!==id);
+  if(editingTarjeta===id) resetTarjetaForm();
+  afterTarjetasChange();
+}
+
+function afterTarjetasChange() {
+  saveState();
+  syncTarjetas();
+  renderTarjetas();
+  renderMetodoSelect();
+  renderTxList();
+  renderDashboard();
+  renderProyeccion();
+}
+
+// RESÚMENES — se calculan de las compras; en la hoja solo se guardan los ajustados o pagados
+const resOpen = new Set();
+
+function renderResumenes() {
+  const el = document.getElementById('res-list');
+  if(!state.tarjetas.length) {
+    el.innerHTML = `<div class="tc-aviso">Para ver tus resúmenes, primero configurá tus tarjetas con su día de cierre y vencimiento.
+      <button onclick="goTo('tarjetas', navMov())">Configurar tarjeta</button></div>`;
+    return;
+  }
+  const todos = calcResumenes();
+  const hoy = hoyIso();
+  // Pendientes: los impagos ya cerrados + el período abierto de cada tarjeta (los posteriores son cuotas futuras)
+  const pend = todos.filter(r => !resPagado(r) && (r.total>0 || resAjustado(r)) && r.idx <= idxResumenDe(r.tj, hoy))
+    .sort((a,b) => a.fechaVencimiento.localeCompare(b.fechaVencimiento) || a.tj.nombre.localeCompare(b.tj.nombre));
+  const pagados = todos.filter(resPagado).sort((a,b) => b.fechaVencimiento.localeCompare(a.fechaVencimiento));
+
+  const html = pend.length
+    ? pend.map((r, i) => resumenCardHtml(r, i===0)).join('')
+    : '<div class="card"><div class="empty-state"><div class="empty-icon">📆</div>No tenés resúmenes pendientes</div></div>';
+
+  const pagadosHtml = pagados.length ? `<div class="card res-paid ${resOpen.has('pagados')?'open':''}">
+      <div class="res-toggle" style="border-top:none;padding:0" onclick="toggleRes('pagados', this)"><span>Resúmenes pagados (${pagados.length})</span><span class="res-chev">›</span></div>
+      <div class="res-detail" style="margin:8px 0 0">${pagados.map(r => {
+        const pago = state.txs.find(t => esPagoTarjeta(t) && t.cat===r.rec.id);
+        const monto = pago ? Number(pago.monto) : resAPagar(r);
+        return `<div class="tx-item">
+          <div class="tx-info">
+            <div class="tx-cat">💳 ${esc(r.tj.nombre)} · vto ${fechaCorta(r.fechaVencimiento)}</div>
+            <div class="tx-desc">${r.rec.fechaPago ? 'Pagado el '+fechaCorta(r.rec.fechaPago) : 'Pagado'} · ${r.cuotas.length} cuota${r.cuotas.length!==1?'s':''}</div>
+          </div>
+          <div class="tx-right"><div class="tx-amount">${fmt(monto)}</div></div>
+          <button class="btn-mini neutral" onclick="deshacerPago('${esc(r.rec.id)}')">Deshacer</button>
+        </div>`;
+      }).join('')}</div>
+    </div>` : '';
+
+  el.innerHTML = html + pagadosHtml;
+}
+
+function resumenCardHtml(r, destacado) {
+  const abierto = r.fechaCierre >= hoyIso();
+  const aPagar = resAPagar(r);
+  const diff = Math.round(aPagar - r.total);
+  let diffTxt = '';
+  if(resAjustado(r) && diff>0) diffTxt = `+${fmt(diff)} de consumos no registrados`;
+  if(resAjustado(r) && diff<0) diffTxt = `${fmt(-diff)} menos que lo calculado`;
+  const cuotaRow = (c, badge) => `<div class="tx-item">
+      <div class="tx-info">
+        <div class="tx-cat">${esc(comercioDe(c.t))}${badge}</div>
+        <div class="tx-desc">${fechaCorta(c.t.fecha)} · cuota ${c.n}/${c.de}</div>
+      </div>
+      <div class="tx-right"><div class="tx-amount">${fmtU(c.monto, c.t.moneda)}</div></div>
+    </div>`;
+  const aparteBadge = c => !esPropio(c.t) ? `<span class="tx-badge">👤 ${esc(c.t.responsable)}</span>` : `<span class="tx-badge">${esc(c.t.moneda)}</span>`;
+  const totalAparte = r.aparte.filter(c => c.t.moneda==='ARS').reduce((a,c)=>a+c.monto, 0);
+  const detalle = (r.cuotas.length ? r.cuotas.map(c => cuotaRow(c, '')).join('') : '<div class="tx-desc" style="padding:6px 0">Sin cuotas propias registradas</div>')
+    + (r.aparte.length ? `<div class="res-sub">Aparte — no incluido en el total${totalAparte>0?' · '+fmt(totalAparte):''}</div>` + r.aparte.map(c => cuotaRow(c, aparteBadge(c))).join('') : '');
+  const n = r.cuotas.length + r.aparte.length;
+  return `<div class="card res-card ${destacado?'accent':''} ${resOpen.has(r.key)?'open':''}">
+    ${destacado ? '<div class="card-title">Próximo vencimiento</div>' : ''}
+    <div class="res-top">
+      <div>
+        <div class="reint-name">💳 ${esc(r.tj.nombre)}</div>
+        <div class="reint-sub">Vence el ${fechaDMY(r.fechaVencimiento)} · ${abierto?'cierra':'cerró'} el ${fechaCorta(r.fechaCierre)}</div>
+      </div>
+      <div><div class="res-total">${fmt(r.total)}</div><div class="metric-sub" style="text-align:right">calculado</div></div>
+    </div>
+    <div class="field-group" style="margin-top:12px">
+      <label class="field-label">Total a pagar</label>
+      <input type="number" class="field-input" inputmode="decimal" value="${Math.round(aPagar)}" onchange="setTotalAjustado('${esc(r.key)}', this.value)">
+    </div>
+    ${diffTxt ? `<div class="res-diff">${diffTxt}</div>` : ''}
+    <div class="res-toggle" onclick="toggleRes('${esc(r.key)}', this)"><span>Detalle (${n} cuota${n!==1?'s':''})</span><span class="res-chev">›</span></div>
+    <div class="res-detail">${detalle}</div>
+    <button class="btn-action" onclick="pagarResumen('${esc(r.key)}')">Marcar como pagado</button>
+  </div>`;
+}
+
+function toggleRes(key, el) {
+  if(resOpen.has(key)) resOpen.delete(key); else resOpen.add(key);
+  el.parentElement.classList.toggle('open', resOpen.has(key));
+}
+
+const findResumen = key => calcResumenes().find(r => r.key===key);
+
+function ensureResumenRec(r) {
+  if(!r.rec) {
+    r.rec = {id:genId(), tarjetaId:r.tj.id, fechaCierre:r.fechaCierre, fechaVencimiento:r.fechaVencimiento,
+      totalCalculado:r.total, totalAjustado:null, pagado:'', fechaPago:''};
+    state.resumenes.push(r.rec);
+  }
+  return r.rec;
+}
+
+// Un registro sin ajuste y sin pago no aporta nada: se borra para no ensuciar la hoja
+function limpiarResumenRec(rec) {
+  if(rec.pagado!=='si' && rec.totalAjustado===null) state.resumenes = state.resumenes.filter(x => x!==rec);
+}
+
+function setTotalAjustado(key, val) {
+  const r = findResumen(key);
+  if(!r) return;
+  const v = parseFloat(val);
+  const rec = ensureResumenRec(r);
+  rec.totalCalculado = r.total;
+  rec.totalAjustado = !(v>=0) || Math.round(v)===Math.round(r.total) ? null : v;
+  limpiarResumenRec(rec);
+  saveState();
+  syncResumenes();
+  renderResumenes();
+}
+
+function pagarResumen(key) {
+  const r = findResumen(key);
+  if(!r) return;
+  const monto = resAPagar(r);
+  if(!(monto>0)){toast('El total a pagar tiene que ser mayor a cero');return;}
+  if(!confirm(`¿Registrar el pago de ${fmt(monto)} del resumen de ${r.tj.nombre} (vto ${fechaCorta(r.fechaVencimiento)})?`)) return;
+  const rec = ensureResumenRec(r);
+  const hoy = hoyIso();
+  Object.assign(rec, {totalCalculado:r.total, fechaCierre:r.fechaCierre, fechaVencimiento:r.fechaVencimiento, pagado:'si', fechaPago:hoy});
+  // Salida de caja: tipo propio, nunca "gasto", para no contar dos veces lo que ya sumó a categorías al comprar
+  state.txs.push({id:genId(), tipo:'pago-tarjeta', cat:rec.id, monto, moneda:'ARS', fecha:hoy,
+    desc:`Pago resumen ${r.tj.nombre} — vto ${fechaCorta(r.fechaVencimiento)}`, metodoPago:r.tj.id,
+    responsable:'', saldado:'', cuotaActual:null, cuotaTotal:null, montoTotalCompra:null, cantidadCuotas:null});
+  saveState();
+  syncTxs();
+  syncResumenes();
+  renderResumenes();
+  renderTxList();
+  renderDashboard();
+  renderProyeccion();
+  toast('Pago registrado ✓');
+}
+
+function despagarResumen(recId) {
+  const rec = state.resumenes.find(x => x.id===recId);
+  if(!rec) return;
+  rec.pagado = '';
+  rec.fechaPago = '';
+  limpiarResumenRec(rec);
+  syncResumenes();
+}
+
+function deshacerPago(recId) {
+  if(!confirm('¿Deshacer este pago? Se elimina el movimiento y el resumen vuelve a quedar pendiente.')) return;
+  despagarResumen(recId);
+  state.txs = state.txs.filter(t => !(esPagoTarjeta(t) && t.cat===recId));
+  saveState();
+  syncTxs();
+  renderResumenes();
+  renderTxList();
+  renderDashboard();
+  renderProyeccion();
+}
 
 // REINTEGROS — gastos con tarjeta prestada que todavía no te devolvieron
 let reintGroups = [];
@@ -1703,7 +2270,7 @@ function renderReintegros() {
     const rows = [...g.txs].sort((a,b)=>b.fecha.localeCompare(a.fecha)).map(t => `<div class="tx-item">
         <div class="tx-info">
           <div class="tx-cat">${esc(t.desc || catLabel(t.cat))}</div>
-          <div class="tx-desc">${fechaCorta(t.fecha)} · ${metodoLabel(metodoDe(t))}${t.cuotaTotal?` · cuota ${t.cuotaActual}/${t.cuotaTotal}`:''}</div>
+          <div class="tx-desc">${fechaCorta(t.fecha)} · ${metodoLabel(metodoDe(t))}${t.cuotaTotal?` · cuota ${t.cuotaActual}/${t.cuotaTotal}`:''}${esCompraTarjeta(t)?' · '+cuotasTxt(t):''}</div>
         </div>
         <div class="tx-right"><div class="tx-amount">${fmtU(t.monto,t.moneda)}</div></div>
         <button class="btn-mini" onclick="saldarTx('${t.id}')">Saldado</button>
@@ -1766,6 +2333,11 @@ const concilFail = msg => Object.assign(new Error(msg), {userMsg: msg});
 function renderConciliar() {
   const mes = document.getElementById('concil-mes');
   if(!mes.value) { const h=new Date(); mes.value = ymKey(h.getFullYear(), h.getMonth()); }
+  const sel = document.getElementById('concil-tarjeta');
+  const prev = sel.value;
+  sel.innerHTML = state.tarjetas.map(tj => `<option value="${esc(tj.id)}">${esc(tj.nombre)}</option>`).join('')
+    || '<option value="">Configurá una tarjeta primero</option>';
+  if([...sel.options].some(o => o.value===prev)) sel.value = prev;
   renderConcilResult();
 }
 
@@ -1861,23 +2433,37 @@ function fechaEnMes(fecha, mes) {
 // Se buscan coincidencias en todos los gastos de esa tarjeta (un consumo del 29 del mes
 // anterior puede venir en este resumen), pero el bloque "en la app pero no en el resumen"
 // muestra solo los del mes elegido.
+// Las compras del modelo nuevo se comparan cuota por cuota: cada cuota tiene el monto de la cuota y la
+// fecha de la compra original (como figura en el resumen). Se aceptan cuotas de resúmenes vecinos por si
+// el día de cierre configurado no coincide exacto con el del banco, priorizando las del mes elegido.
 function compararResumen(items, tarjeta, mes) {
-  const deTarjeta = state.txs.filter(t => t.tipo==='gasto' && metodoDe(t)===tarjeta);
+  const mesIdx = idxDe(mes);
+  const legacy = state.txs.filter(t => t.tipo==='gasto' && metodoDe(t)===tarjeta && !esCompraTarjeta(t))
+    .map(t => ({key:t.id, t, monto:Number(t.monto), moneda:t.moneda, fecha:t.fecha, legacy:true,
+      vista:{desc:t.desc, cat:t.cat, fecha:t.fecha, monto:t.monto, moneda:t.moneda, cuotaActual:t.cuotaActual, cuotaTotal:t.cuotaTotal}}));
+  const cuotas = state.txs.filter(t => esCompraTarjeta(t) && t.metodoPago===tarjeta).flatMap(cuotasDeCompra)
+    .filter(c => Math.abs(c.idx - mesIdx) <= 1)
+    .map(c => ({key:c.t.id+'#'+c.n, t:c.t, monto:c.monto, moneda:c.t.moneda, fecha:c.t.fecha, idx:c.idx,
+      vista:{desc:c.t.desc, cat:c.t.cat, fecha:c.t.fecha, monto:c.monto, moneda:c.t.moneda, cuotaActual:c.n, cuotaTotal:c.de}}));
+  const candidatos = [...legacy, ...cuotas];
   const dias = (a, b) => Math.abs(Date.parse(a+'T00:00:00') - Date.parse(b+'T00:00:00')) / 86400000;
   const usados = new Set();
   const faltan = [], coinciden = [];
   items.forEach(r => {
     const fechaApp = r.cuotaActual>1 && !r.fecha.startsWith(mes) ? fechaEnMes(r.fecha, mes) : r.fecha;
     let best = null;
-    deTarjeta.forEach(t => {
-      if(usados.has(t.id) || t.moneda!==r.moneda || Math.abs(Number(t.monto)-r.monto) > MONTO_TOLERANCIA) return;
-      const d = dias(t.fecha, fechaApp);
-      if(d <= DIAS_TOLERANCIA && (!best || d < best.d)) best = {t, d};
+    candidatos.forEach(c => {
+      if(usados.has(c.key) || c.moneda!==r.moneda || Math.abs(c.monto-r.monto) > MONTO_TOLERANCIA) return;
+      const d = dias(c.fecha, c.legacy ? fechaApp : r.fecha);
+      if(d > DIAS_TOLERANCIA) return;
+      const score = d + (!c.legacy && c.idx!==mesIdx ? 0.5 : 0);
+      if(!best || score < best.score) best = {c, score};
     });
-    if(best) { usados.add(best.t.id); coinciden.push({r, t:best.t}); }
+    if(best) { usados.add(best.c.key); coinciden.push({r, t:best.c.t}); }
     else faltan.push({...r, fechaApp, cat:'', responsable:''});
   });
-  const soloApp = deTarjeta.filter(t => String(t.fecha).startsWith(mes) && !usados.has(t.id)).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  const soloApp = candidatos.filter(c => !usados.has(c.key) && (c.legacy ? String(c.fecha).startsWith(mes) : c.idx===mesIdx))
+    .map(c => c.vista).sort((a,b)=>a.fecha.localeCompare(b.fecha));
   return {tarjeta, mes, faltan, coinciden, soloApp};
 }
 
@@ -1885,6 +2471,7 @@ async function runConciliacion() {
   const file = document.getElementById('concil-file').files[0];
   const tarjeta = document.getElementById('concil-tarjeta').value;
   const mes = document.getElementById('concil-mes').value;
+  if(!tarjetaById(tarjeta)){toast('Primero configurá tu tarjeta');goTo('tarjetas', navMov());return;}
   if(!file){toast('Elegí el PDF del resumen');return;}
   if(!/\.pdf$/i.test(file.name)){toast('El archivo tiene que ser un PDF');return;}
   if(!/^\d{4}-\d{2}$/.test(mes)){toast('Elegí el mes del resumen');return;}
@@ -1961,12 +2548,24 @@ function renderConcilResult() {
     + block('soloApp', `Están en la app pero no en el resumen (${soloApp.length})`, soloBody);
 }
 
+// Los faltantes se cargan con el modelo nuevo (si no, contarían como salida de caja y otra vez al pagar el resumen).
+// Una cuota k/N se carga como compra de las N−k+1 cuotas que quedan, con fecha dentro de este resumen,
+// para que la primera caiga acá y no queden cuotas viejas como deuda.
 function cargarFaltantes() {
   if(!concil || !concil.faltan.length) return;
+  const tj = tarjetaById(concil.tarjeta);
+  if(!tj) return;
+  const mesIdx = idxDe(concil.mes);
+  const cierre = resumenFechas(tj, mesIdx).fechaCierre;
   const nuevos = concil.faltan.map(f => {
     const responsable = String(f.responsable||'').trim();
-    return {id:genId(), tipo:'gasto', cat:f.cat||'gustos', monto:f.monto, moneda:f.moneda, fecha:f.fechaApp, desc:f.comercio,
-      metodoPago:concil.tarjeta, responsable, saldado:responsable?'no':'', cuotaActual:f.cuotaActual, cuotaTotal:f.cuotaTotal};
+    const restantes = f.cuotaTotal ? f.cuotaTotal - f.cuotaActual + 1 : 1;
+    const total = f.monto * restantes;
+    const fecha = idxResumenDe(tj, f.fecha)===mesIdx ? f.fecha : cierre;
+    const desc = f.cuotaActual>1 ? `${f.comercio} (desde cuota ${f.cuotaActual}/${f.cuotaTotal})` : f.comercio;
+    return {id:genId(), tipo:'gasto', cat:f.cat||'gustos', monto:total, moneda:f.moneda, fecha, desc,
+      metodoPago:tj.id, responsable, saldado:responsable?'no':'', cuotaActual:null, cuotaTotal:null,
+      montoTotalCompra:total, cantidadCuotas:restantes};
   });
   state.txs.push(...nuevos);
   saveState();
@@ -2078,8 +2677,8 @@ function buildContext() {
   const ingresoBase = ingresoManual();
   const ingresoReg = ingresoTxs(state.curYear, state.curMonth);
   const ingreso = ingresoBase + ingresoReg;
-  const gastos = txs.filter(t=>t.tipo==='gasto'&&t.moneda==='ARS').reduce((a,t)=>a+Number(t.monto),0);
-  const balance = ingreso - gastos;
+  const caja = cajaDelMes(state.curYear, state.curMonth);
+  const gastos = caja.gastado;
   const ahorroUsdt = txs.filter(t=>t.tipo==='gasto'&&t.cat==='ahorro'&&t.moneda==='USDT').reduce((a,t)=>a+Number(t.monto),0);
   const catResumen = CATS_GASTO.map(c=>{
     const g = txs.filter(t=>t.tipo==='gasto'&&t.cat===c.id&&t.moneda==='ARS').reduce((a,t)=>a+Number(t.monto),0);
@@ -2100,11 +2699,13 @@ function buildContext() {
   ].join('\n') : '  (sin objetivos definidos)';
   return `DATOS FINANCIEROS DEL USUARIO — ${MONTHS_ES[state.curMonth]} ${state.curYear}:
 Ingreso del mes: $${Math.round(ingreso).toLocaleString('es-AR')} ARS (manual $${Math.round(ingresoBase).toLocaleString('es-AR')} + registrado como transacciones $${Math.round(ingresoReg).toLocaleString('es-AR')})
-Total gastado (ARS): $${Math.round(gastos).toLocaleString('es-AR')}
-Balance: $${Math.round(balance).toLocaleString('es-AR')}${ahorroUsdt>0?'\nAhorro en USDT este mes: U$'+ahorroUsdt.toFixed(2)+' (no se convierte a ARS)':''}
+Gastado este mes (ARS, devengado: incluye compras con tarjeta en su fecha de compra): $${Math.round(gastos).toLocaleString('es-AR')}
+Saldo disponible del mes (caja): $${Math.round(caja.saldo).toLocaleString('es-AR')} = ingresos − gastos de caja $${Math.round(caja.gastosCaja).toLocaleString('es-AR')} − pagos de resumen de tarjeta $${Math.round(caja.pagos).toLocaleString('es-AR')} (no incluye compras con tarjeta todavía impagas)${ahorroUsdt>0?'\nAhorro en USDT este mes: U$'+ahorroUsdt.toFixed(2)+' (no se convierte a ARS)':''}
 
-Detalle por categoría:
+Detalle por categoría (devengado):
 ${catResumen}
+
+${buildCardContext()}
 
 Objetivos de ahorro:
 ${objResumen}
@@ -2172,6 +2773,27 @@ TENDENCIA:
   Evolución de gastos dentro del historial (meses recientes vs más antiguos): ${tendHist}
   Por categoría:
 ${catTend}`;
+}
+
+function buildCardContext() {
+  if(!state.tarjetas.length) return 'TARJETAS DE CRÉDITO: no hay tarjetas configuradas.';
+  const $ = n => '$'+Math.round(n).toLocaleString('es-AR');
+  const resumenes = calcResumenes();
+  const deuda = deudaTarjetas(resumenes);
+  const hoy = hoyIso();
+  const pend = resumenes.filter(r => !resPagado(r) && r.total>0)
+    .sort((a,b) => a.fechaVencimiento.localeCompare(b.fechaVencimiento)).slice(0, 8);
+  const lineas = pend.map(r => {
+    const estado = r.fechaVencimiento < hoy ? 'VENCIDO y sin marcar como pagado'
+      : r.fechaCierre >= hoy ? `abierto, cierra el ${fechaDMY(r.fechaCierre)}` : `cerrado el ${fechaDMY(r.fechaCierre)}`;
+    return `  - ${r.tj.nombre}: vence el ${fechaDMY(r.fechaVencimiento)}, ${$(r.total)} en ${r.cuotas.length} cuota${r.cuotas.length!==1?'s':''}${resAjustado(r)?` (la usuaria ajustó el total a pagar a ${$(r.rec.totalAjustado)})`:''} — ${estado}`;
+  });
+  return `TARJETAS DE CRÉDITO (las compras con tarjeta cuentan como gasto el día de la compra, pero la plata sale de caja recién al pagar el resumen):
+Tarjetas: ${state.tarjetas.map(tj => `${tj.nombre} (cierra el ${tj.diaCierre}, vence el ${tj.diaVencimiento})`).join(', ')}
+Deuda total en tarjetas (cuotas pendientes de todos los resúmenes impagos): ${$(deuda.total)}
+${deuda.prox ? `Próximo vencimiento: ${$(deuda.prox.monto)} el ${fechaDMY(deuda.prox.fecha)}` : 'Sin vencimientos pendientes'}
+Próximos resúmenes a pagar:
+${lineas.length ? lineas.join('\n') : '  (ninguno)'}`;
 }
 
 function buildProjectionContext() {
